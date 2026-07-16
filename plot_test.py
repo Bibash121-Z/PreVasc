@@ -1,415 +1,264 @@
-import json
 import collections
 import threading
-import time
 import numpy as np
-import websocket  # pip install websocket-client
+import paho.mqtt.client as mqtt
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-
-# Filtering libraries
-from scipy.signal import (
-    butter,
-    filtfilt,
-    medfilt,
-    find_peaks,
-    savgol_filter
-)
+from paho.mqtt.enums import CallbackAPIVersion
+from scipy.signal import butter, filtfilt, medfilt, find_peaks, savgol_filter
 
 # --------------------------------------------------
 # Configuration
 # --------------------------------------------------
-WS_URL = "ws://127.0.0.1:8000/ws/sensor_data/"
-BUFFER_SIZE = 2000  # Max history of raw points to keep in memory (10s of data)
-FS = 200            # Expected sampling rate (Hz) of MAX30102
-WINDOW_SECONDS = 5  # Rolling plot time window
+BROKER = "192.168.43.252"
+PORT = 1883
+TOPIC = "sensor/vascular"
+
+FS = 200            # Matches ESP32 200Hz
+BUFFER_SIZE = 1200  # 6 seconds of history
+WINDOW_SECONDS = 4  # Time window shown on screen
 
 # --------------------------------------------------
-# 1. Embedded PPG Processor Class[cite: 1]
+# Optimized PPG Processor with Wave Inversion
 # --------------------------------------------------
 class PPGProcessor:
-    def __init__(
-        self,
-        fs=200,
-        lowcut=0.5,
-        highcut=12.0,
-        butter_order=3,
-        median_kernel=5,
-        moving_average_window=5
-    ):
+    def __init__(self, fs=200):
         self.fs = fs
-        self.lowcut = lowcut
-        self.highcut = highcut
-        self.butter_order = butter_order
-        self.median_kernel = median_kernel
-        self.ma_window = moving_average_window
-
         nyquist = fs / 2
-        low = lowcut / nyquist
-        high = min(highcut / nyquist, 0.99)
-
-        self.b, self.a = butter(
-            butter_order,
-            [low, high],
-            btype="bandpass"
-        )
-
+        self.b, self.a = butter(3, [0.5 / nyquist, 8.0 / nyquist], btype="bandpass")
         self.baseline = None
         self.alpha = 0.995
         self.previous_bpm = 0.0
 
-    def remove_baseline(self, signal):
-        signal = np.asarray(signal, dtype=float)
+    def process(self, raw_signal):
+        sig = np.asarray(raw_signal, dtype=float)
+        n = len(sig)
+        
+        if n < 200:
+            return None
+
+        # 1. Fast Baseline Drift Removal
         if self.baseline is None:
-            self.baseline = signal[0]
-        baseline = np.zeros_like(signal)
+            self.baseline = sig[0]
+        baseline = np.zeros_like(sig)
         current = self.baseline
-        for i, sample in enumerate(signal):
-            current = (self.alpha * current + (1 - self.alpha) * sample)
+        for i in range(n):
+            current = (self.alpha * current + (1 - self.alpha) * sig[i])
             baseline[i] = current
         self.baseline = current
-        return signal - baseline
+        ac_signal = sig - baseline
 
-    def median_filter(self, signal):
-        return medfilt(signal, kernel_size=self.median_kernel)
+        # 2. Median Filter
+        filtered = medfilt(ac_signal, kernel_size=5)
 
-    def butterworth_filter(self, signal):
-        if len(signal) < 3 * max(len(self.a), len(self.b)):
-            return signal
-        return filtfilt(self.b, self.a, signal)
+        # 3. Fast Zero-phase Butterworth Bandpass
+        filtered = filtfilt(self.b, self.a, filtered)
 
-    def savgol_smooth(self, signal, window_length=7, polyorder=3):
-        n = len(signal)
-        wl = window_length
-        if wl >= n:
-            wl = n - 1 if (n - 1) % 2 == 1 else n - 2
-        if wl <= polyorder:
-            return signal
-        if wl % 2 == 0:
-            wl -= 1
-        if wl < 5:
-            return signal
-        return savgol_filter(signal, window_length=wl, polyorder=polyorder)
+        # 4. Smooth out jitter
+        filtered = savgol_filter(filtered, window_length=11, polyorder=3)
 
-    def normalize_display(self, signal):
-        maximum = np.max(np.abs(signal))
-        if maximum < 1e-8:
-            return signal
-        return signal / maximum
+        # 5. --- INVERT THE SIGNAL ---
+        # Multiplying by -1 flips it so blood volume pulse waves point UPWARD.
+        filtered = -filtered
 
-    def compute_fft(self, signal):
-        signal = np.asarray(signal)
-        n = len(signal)
-        fft = np.fft.rfft(signal)
-        magnitude = np.abs(fft)
-        frequency = np.fft.rfftfreq(n, d=1 / self.fs)
-        return frequency, magnitude
+        # 6. Normalize for analysis
+        max_val = np.max(np.abs(filtered))
+        display_signal = filtered / max_val if max_val > 1e-6 else filtered
 
-    def dominant_frequency(self, signal):
-        frequency, magnitude = self.compute_fft(signal)
-        mask = ((frequency >= 0.5) & (frequency <= 3.0))
-        frequency = frequency[mask]
-        magnitude = magnitude[mask]
-        if len(frequency) == 0:
-            return 0.0
-        index = np.argmax(magnitude)
-        return frequency[index]
-
-    def estimate_bpm(self, signal):
-        bpm = self.dominant_frequency(signal) * 60
-        if self.previous_bpm == 0:
-            self.previous_bpm = bpm
-        else:
-            self.previous_bpm = 0.85 * self.previous_bpm + 0.15 * bpm
-        return self.previous_bpm
-
-    def signal_statistics(self, signal):
-        return {
-            "mean": np.mean(signal),
-            "rms": np.sqrt(np.mean(signal ** 2)),
-            "std": np.std(signal),
-            "max": np.max(signal),
-            "min": np.min(signal),
-            "energy": np.sum(signal ** 2)
-        }
-
-    def detect_systolic_peaks(self, signal):
-        signal = np.asarray(signal)
-        if len(signal) < self.fs * 2:
-            return np.array([], dtype=int)
-        mean = np.mean(signal)
-        std = np.std(signal)
-        threshold = mean + 0.35 * std
-        prominence = max(0.10 * (np.max(signal) - np.min(signal)), 0.02)
-        min_distance = int(0.33 * self.fs)
-
-        peaks, _ = find_peaks(
-            signal,
+        # 7. Systolic Peak Detection (Now on the tall upward crests!)
+        mean = np.mean(display_signal)
+        std = np.std(display_signal)
+        threshold = mean + 0.15 * std
+        prominence = max(0.15 * (np.max(display_signal) - np.min(display_signal)), 0.02)
+        min_distance = int(0.35 * self.fs)
+        
+        systolic_peaks, _ = find_peaks(
+            display_signal,
             height=threshold,
             distance=min_distance,
-            prominence=prominence,
-            width=2
+            prominence=prominence
         )
 
-        valid = []
-        for p in peaks:
-            if p < 3 or p > len(signal) - 4:
-                continue
-            if signal[p] > signal[p - 1] and signal[p] > signal[p + 1]:
-                valid.append(p)
-        return np.array(valid, dtype=int)
-
-    def detect_diastolic(self, signal, systolic_peaks):
-        signal = np.asarray(signal, dtype=float)
-        diastolic = []
-        n = len(signal)
+        # 8. Diastolic Peak Detection (On the falling/dicrotic shoulder)
+        diastolic_peaks = []
         for i in range(len(systolic_peaks)):
             p_start = systolic_peaks[i]
             p_end = systolic_peaks[i + 1] if i + 1 < len(systolic_peaks) else n
-            segment = signal[p_start:p_end]
+            segment = display_signal[p_start:p_end]
             m = len(segment)
-            if m < 15:
+            if m < 25:
                 continue
-            lo = max(int(0.06 * m), 2)
-            window = segment[lo:]
-            wlen = len(window)
-            if wlen < 10:
+            
+            # Search the mid-descent region of the wave
+            start_idx = int(0.20 * m)
+            end_idx = int(0.75 * m)
+            window = segment[start_idx:end_idx]
+            
+            if len(window) < 5:
                 continue
-            local_range = np.max(window) - np.min(window)
-            if local_range < 1e-9:
-                continue
 
-            min_prominence = max(0.05 * local_range, 1e-6)
-            min_distance = max(int(0.05 * self.fs), 2)
-            minima, _ = find_peaks(-window, prominence=min_prominence, distance=min_distance)
+            # Detect the inflection point on the downward slope
+            dy = np.diff(window)
+            d2y = np.diff(dy)
+            
+            # Find the peak of the second derivative (maximum rate of curvature change)
+            if len(d2y) > 0:
+                inflection_idx = np.argmax(d2y)
+                diastolic_peaks.append(p_start + start_idx + inflection_idx)
+            else:
+                # Fallback to 45% of the downward slope
+                diastolic_peaks.append(p_start + int(0.45 * m))
 
-            diastolic_idx = None
-            margin = max(int(0.10 * wlen), 4)
-
-            for cand in minima:
-                remaining = window[cand:]
-                if len(remaining) - margin < 5:
-                    continue
-                search_zone = remaining[: len(remaining) - margin]
-                bump_prominence = max(0.08 * local_range, 1e-6)
-                maxima, _ = find_peaks(search_zone, prominence=bump_prominence, distance=min_distance)
-                if len(maxima) == 0:
-                    continue
-                rise = search_zone[maxima[0]] - window[cand]
-                if rise < 0.10 * local_range:
-                    continue
-                diastolic_idx = cand + maxima[0]
-                break
-
-            if diastolic_idx is not None:
-                diastolic.append(p_start + lo + diastolic_idx)
-        return np.array(diastolic, dtype=int)
-
-    def preprocess_signal(self, signal):
-        signal = np.asarray(signal, dtype=float)
-        if len(signal) < 400:
-            return {
-                "raw": signal,
-                "baseline_removed": signal,
-                "filtered": signal,
-                "display": signal,
-                "light_display": signal,
-                "frequency": 0.0,
-                "bpm": 0.0,
-                "statistics": {"mean": 0, "std": 0, "rms": 0},
-                "systolic_peaks": np.array([], dtype=int),
-                "diastolic_peaks": np.array([], dtype=int)
-            }
-
-        baseline_removed = self.remove_baseline(signal)
-        median = self.median_filter(baseline_removed)
-        light_display = self.normalize_display(median)
-        filtered = self.butterworth_filter(median)
-        filtered = self.savgol_smooth(filtered, window_length=11, polyorder=3)
-
-        frequency = self.dominant_frequency(filtered)
-        bpm = self.estimate_bpm(filtered)
-        statistics = self.signal_statistics(filtered)
-        systolic_peaks = self.detect_systolic_peaks(filtered)
-        diastolic_peaks = self.detect_diastolic(filtered, systolic_peaks)
-        display = self.normalize_display(filtered)
+        # 9. Fast BPM estimation
+        fft_m = np.abs(np.fft.rfft(display_signal))
+        fft_f = np.fft.rfftfreq(n, d=1 / self.fs)
+        mask = (fft_f >= 0.6) & (fft_f <= 2.8)
+        
+        bpm = 75.0
+        if np.any(mask):
+            dominant_idx = np.argmax(fft_m[mask])
+            dominant_freq = fft_f[mask][dominant_idx]
+            calculated_bpm = dominant_freq * 60
+            if self.previous_bpm == 0:
+                self.previous_bpm = calculated_bpm
+            else:
+                self.previous_bpm = 0.9 * self.previous_bpm + 0.1 * calculated_bpm
+            bpm = self.previous_bpm
 
         return {
-            "raw": signal,
-            "baseline_removed": baseline_removed,
-            "filtered": filtered,
-            "display": display,
-            "light_display": light_display,
-            "frequency": frequency,
-            "bpm": bpm,
-            "statistics": statistics,
-            "systolic_peaks": systolic_peaks,
-            "diastolic_peaks": diastolic_peaks
+            "display": display_signal,
+            "systolic": systolic_peaks,
+            "diastolic": np.array(diastolic_peaks, dtype=int),
+            "bpm": bpm
         }
 
 # --------------------------------------------------
-# 2. Thread-Safe Global Data Buffers
+# Thread-Safe Storage & MQTT Client
 # --------------------------------------------------
 raw_ir_buffer = collections.deque(maxlen=BUFFER_SIZE)
 data_lock = threading.Lock()
 processor = PPGProcessor(fs=FS)
-last_print = 0
 
-# --------------------------------------------------
-# 3. WebSocket Connection Callback Handlers
-# --------------------------------------------------
-def on_message(ws, message):
+def on_connect(client, userdata, flags, reason_code, properties=None):
+    if reason_code == 0:
+        print("🟢 Connected to local broker. Real-time inverted pipeline running...")
+        client.subscribe(TOPIC)
+
+def on_message(client, userdata, msg):
     try:
-        data = json.loads(message)
-        ir_values = data.get("ir", [])
-        
-        with data_lock:
-            # Append new batch items directly to our rolling raw buffer
-            for ir in ir_values:
-                raw_ir_buffer.append(ir)
-                
-    except Exception as e:
-        print(f"🔴 WebSocket Decoding Error: {e}")
+        payload_str = msg.payload.decode('utf-8').strip()
+        if "," in payload_str:
+            _, ir_val_str = payload_str.split(",")
+            ir_val = float(ir_val_str.strip())
+            
+            with data_lock:
+                raw_ir_buffer.append(ir_val)
+    except:
+        pass
 
-def on_error(ws, error):
-    print(f"🔴 WebSocket Connection Error: {error}")
-
-def on_close(ws, close_status_code, close_msg):
-    print("🔌 Local Django WebSocket Connection Closed.")
-
-def on_open(ws):
-    print("🟢 Connected to Django WebSocket! Listening for sensor pipeline...")
-
-def run_ws():
-    ws = websocket.WebSocketApp(
-        WS_URL,
-        on_open=on_open,
-        on_message=on_message,
-        on_error=on_error,
-        on_close=on_close
-    )
-    ws.run_forever()
+def run_mqtt():
+    client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
+    client.on_connect = on_connect
+    client.on_message = on_message
+    client.connect(BROKER, PORT, 60)
+    client.loop_forever()
 
 # --------------------------------------------------
-# 4. Matplotlib Animation Loop[cite: 1]
+# Blitted Minimalist Animation Loop
 # --------------------------------------------------
-def update_plot(frame, filtered_line, light_line, peak_points, diastolic_points, stats_text, ax):
-    global last_print
-    
-    # Safely copy raw buffer values to array
+def update_plot(frame, raw_line, filtered_line, systolic_points, diastolic_points, stats_text, ax_raw, ax_filt):
     with data_lock:
         signal_copy = list(raw_ir_buffer)
-        
-    if len(signal_copy) < 100:
-        return filtered_line, light_line, peak_points, diastolic_points
 
-    # Run the raw data through our processing pipeline[cite: 1]
-    results = processor.preprocess_signal(signal_copy)
+    if len(signal_copy) < (FS * 2):
+        return raw_line, filtered_line, systolic_points, diastolic_points, stats_text
+
+    raw_signal = np.array(signal_copy)
+    x = np.arange(len(raw_signal)) / FS
+    last_x = x[-1]
+
+    # --- 1. Update Raw Axis Line ---
+    raw_line.set_data(x, raw_signal)
+    ax_raw.set_xlim(last_x - WINDOW_SECONDS, last_x)
     
-    filtered = results["display"]
-    light = results["light_display"]
-    peaks = results["systolic_peaks"]
-    diastolic = results["diastolic_peaks"]
-    frequency = results["frequency"]
-    bpm = results["bpm"]
-    stats = results["statistics"]
+    recent_raw = raw_signal[-int(FS * WINDOW_SECONDS):]
+    ymin, ymax = np.min(recent_raw), np.max(recent_raw)
+    margin = max((ymax - ymin) * 0.1, 50)
+    ax_raw.set_ylim(ymin - margin, ymax + margin)
 
-    # Calculate current relative time representation
-    x = np.arange(len(filtered)) / FS
+    # --- 2. Run Pipeline & Update Filtered Line ---
+    results = processor.process(signal_copy)
+    if results is not None:
+        filtered = results["display"]
+        systolic = results["systolic"]
+        diastolic = results["diastolic"]
+        bpm = results["bpm"]
 
-    # Assign datasets to plot markers
-    filtered_line.set_data(x, filtered)
-    light_line.set_data(x, light)
+        filtered_line.set_data(x, filtered)
+        ax_filt.set_xlim(last_x - WINDOW_SECONDS, last_x)
 
-    if len(peaks):
-        peak_points.set_data(x[peaks], filtered[peaks])
-    else:
-        peak_points.set_data([], [])
+        # Plot Systolic (On the new upright peaks)
+        if len(systolic):
+            systolic_points.set_data(x[systolic], filtered[systolic])
+        else:
+            systolic_points.set_data([], [])
 
-    if len(diastolic):
-        diastolic_points.set_data(x[diastolic], filtered[diastolic])
-    else:
-        diastolic_points.set_data([], [])
+        # Plot Diastolic (On the dicrotic notch falling slope)
+        if len(diastolic):
+            diastolic_points.set_data(x[diastolic], filtered[diastolic])
+        else:
+            diastolic_points.set_data([], [])
 
-    # Keep visualization sliding forward
-    ax.set_xlim(x[-1] - WINDOW_SECONDS, x[-1])
+        stats_text.set_text(f"HR: {bpm:5.1f} BPM")
 
-    # Update GUI statistics window
-    stats_text.set_text(
-        f"Heart Rate : {bpm:5.1f} BPM\n"
-        f"Frequency  : {frequency:4.2f} Hz\n"
-        f"Systolic   : {len(peaks)}\n"
-        f"Diastolic  : {len(diastolic)}\n"
-        f"Mean       : {stats['mean']:.3f}\n"
-        f"Std Dev    : {stats['std']:.3f}\n"
-        f"RMS        : {stats['rms']:.3f}"
-    )
-
-    # Print log to Python terminal exactly every 1 second[cite: 1]
-    if time.time() - last_print > 1:
-        print("=" * 45)
-        print(f"Frequency : {frequency:.2f} Hz")
-        print(f"BPM       : {bpm:.1f}")
-        print(f"Systolic  : {len(peaks)}")
-        print(f"Diastolic : {len(diastolic)}")
-        last_print = time.time()
-
-    return filtered_line, light_line, peak_points, diastolic_points
+    return raw_line, filtered_line, systolic_points, diastolic_points, stats_text
 
 # --------------------------------------------------
-# 5. Main Execution Thread Configuration[cite: 1]
+# Main UI Setup
 # --------------------------------------------------
 def main():
-    # Start WebSocket reader thread
-    ws_thread = threading.Thread(target=run_ws)
-    ws_thread.daemon = True
-    ws_thread.start()
+    mqtt_thread = threading.Thread(target=run_mqtt, daemon=True)
+    mqtt_thread.start()
 
-    print("Receiving filtered Django WebSocket stream...")
+    plt.style.use("dark_background")
+    fig, (ax_raw, ax_filt) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    fig.canvas.manager.set_window_title("Clean Real-Time PPG Dual-Peak Analyzer")
 
-    # Configure Matplotlib window style[cite: 1]
-    plt.style.use("ggplot")
-    fig, ax = plt.subplots(figsize=(12, 5))
-    fig.canvas.manager.set_window_title("Integrated Real-time PPG Filter (Django Source)")
+    for ax in [ax_raw, ax_filt]:
+        ax.set_axis_off()
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+        ax.grid(False)
 
-    filtered_line, = ax.plot([], [], color="royalblue", linewidth=2, label="Fully filtered", zorder=3)
-    light_line, = ax.plot([], [], color="gray", linewidth=1, alpha=0.6, label="Lightly filtered (raw-ish)", zorder=1)
+    raw_line, = ax_raw.plot([], [], color="#ff4d4d", linewidth=1.5, label="Raw")
+    filtered_line, = ax_filt.plot([], [], color="#00ffcc", linewidth=2.5, label="Filtered")
     
-    peak_points, = ax.plot([], [], "ro", markersize=6, label="Systolic Peaks")
-    diastolic_points, = ax.plot([], [], "go", markersize=7, label="Diastolic Peaks")
+    # Updated: Systolic is Pink, Diastolic is Neon Green
+    systolic_points, = ax_filt.plot([], [], "o", color="#ff007f", markersize=8, label="Systole")
+    diastolic_points, = ax_filt.plot([], [], "o", color="#39ff14", markersize=8, label="Diastole")
 
-    ax.set_title("Live Filtered PPG Signal Pipeline")
-    ax.set_xlabel("Time (seconds)")
-    ax.set_ylabel("Normalized Amplitude")
-    ax.set_xlim(0, BUFFER_SIZE / FS)
-    ax.set_ylim(-1.2, 1.2)
-    ax.grid(True)
-
-    stats_text = ax.text(
-        0.02, 0.98, "",
-        transform=ax.transAxes,
-        fontsize=11,
+    stats_text = ax_filt.text(
+        0.02, 0.90, "",
+        transform=ax_filt.transAxes,
+        fontsize=16,
+        fontweight="bold",
+        color="#00ffcc",
         verticalalignment="top",
-        bbox=dict(facecolor="white", alpha=0.8)
     )
 
-    ax.legend(loc="upper right")
+    ax_filt.set_ylim(-1.1, 1.1)
 
-    # Run animation loop (updates every 50ms to match original configuration)[cite: 1]
     ani = animation.FuncAnimation(
         fig,
         update_plot,
-        fargs=(filtered_line, light_line, peak_points, diastolic_points, stats_text, ax),
-        interval=50,
-        blit=False,
+        fargs=(raw_line, filtered_line, systolic_points, diastolic_points, stats_text, ax_raw, ax_filt),
+        interval=33, 
+        blit=True, 
         cache_frame_data=False
     )
 
-    try:
-        plt.tight_layout()
-        plt.show()
-    finally:
-        print("Visualizer application terminated.")
+    plt.tight_layout()
+    plt.show()
 
 if __name__ == "__main__":
     main()

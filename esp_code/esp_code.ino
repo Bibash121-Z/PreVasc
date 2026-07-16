@@ -4,9 +4,9 @@
 #include "MAX30105.h" 
 
 // --- Block 1: LAN Network & Local Broker Setup ---
-const char* ssid = "MrZ";            // Replace with your Hotspot Name
-const char* password = "12345678";    // Replace with your Hotspot Password
-const char* mqtt_server = "192.168.43.252";         // Replace with your PC's real Hotspot IP
+const char* ssid = "MrZ";            // Your Hotspot Name
+const char* password = "12345678";    // Your Hotspot Password
+const char* mqtt_server = "192.168.43.252"; // Your PC's active hotspot IP
 const int mqtt_port = 1883;                        
 const char* mqtt_topic = "sensor/vascular";
 
@@ -14,10 +14,12 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 MAX30105 particleSensor;
 
-unsigned long lastPublishTime = 0;
-const unsigned long publishInterval = 100; 
+// --- Block 2: Sampling Configuration (200 Hz) ---
+const uint16_t SAMPLE_RATE = 200;              // 200 Hz for high fidelity
+const uint32_t SAMPLE_PERIOD = 1000000UL / SAMPLE_RATE; // Sample period in microseconds (5000 µs)
+uint32_t lastSample = 0;
 
-// --- Block 2: Inbound data receiver handler ---
+// --- Block 3: Inbound data receiver handler ---
 void callback(char* topic, byte* payload, unsigned int length) {
     String message = "";
     for (int i = 0; i < length; i++) {
@@ -33,7 +35,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
     }
 }
 
-// --- Block 3: Automated Wi-Fi login engine ---
+// --- Block 4: Automated Wi-Fi login engine ---
 void setup_wifi() {
     delay(10);
     Serial.println();
@@ -50,7 +52,7 @@ void setup_wifi() {
     Serial.println(WiFi.localIP());
 }
 
-// --- Block 4: Local Server Reconnection Loop ---
+// --- Block 5: Local Server Reconnection Loop ---
 void reconnect() {
     while (!client.connected()) {
         Serial.print("Attempting local MQTT connection to PC...");
@@ -68,9 +70,13 @@ void reconnect() {
     }
 }
 
-// --- Block 5: Master Hardware & Network Initializer ---
+// --- Block 6: Master Hardware & Network Initializer ---
 void masterConnectSetup() {
     setup_wifi();
+    
+    // Explicitly initialize custom I2C pins and fast clock speed
+    Wire.begin(21, 22);            // SDA, SCL
+    Wire.setClock(400000);         // 400 kHz I2C
     
     Serial.print("Initializing MAX30102...");
     if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {
@@ -79,41 +85,49 @@ void masterConnectSetup() {
     }
     Serial.println("🟢 MAX30102 Initialized!");
 
-    byte ledBrightness = 60; 
-    byte sampleAverage = 4;  
-    byte ledMode = 2;        
-    byte sampleRate = 100;   
-    int pulseWidth = 411;    
-    int adcRange = 4096;     
+    // Hardware parameters configured for exact 200 Hz operation
+    particleSensor.setup(
+        80,             // LED Brightness (0–255)
+        1,              // Sample Averaging (1 = no averaging for maximum raw data)
+        2,              // LED Mode (Red + IR)
+        SAMPLE_RATE,    // Sample Rate (200 Hz)
+        411,            // Pulse Width (411 µs, 18-bit ADC)
+        4096            // ADC Range
+    );
 
-    particleSensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange);
+    // Precise amplitude settings
+    particleSensor.setPulseAmplitudeRed(0x32); 
+    particleSensor.setPulseAmplitudeIR(0x32);
 
     client.setServer(mqtt_server, mqtt_port);
     client.setCallback(callback);
+    
+    // Initialize timing variable
+    lastSample = micros();
 }
 
-// --- Block 6: Master Runtime & Sensor Loop ---
+// --- Block 7: Master Runtime & Sensor Loop ---
 void masterConnectLoop() {
     if (!client.connected()) {
         reconnect();
     }
     client.loop();
 
-    unsigned long currentMillis = millis();
-    if (currentMillis - lastPublishTime >= publishInterval) {
-        lastPublishTime = currentMillis;
+    // High-precision microsecond sampling interval checks
+    if (micros() - lastSample >= SAMPLE_PERIOD) {
+        lastSample += SAMPLE_PERIOD;
 
         uint32_t redValue = particleSensor.getRed();
         uint32_t irValue = particleSensor.getIR();
 
-        if (irValue < 50000) {
-           // Serial.println("Finger status: Please place finger on sensor.");
-        } else {
-            String payload = String(redValue) + "," + String(irValue);
-            Serial.print("Publishing PPG Data: ");
-            //Serial.println(payload);
-            client.publish(mqtt_topic, payload.c_str());
-        }
+        // Removed the "irValue < 50000" threshold block.
+        // Data streams continuously to allow algorithms to dynamically adapt to finger placement.
+        String payload = String(redValue) + "," + String(irValue);
+        
+        Serial.print("Publishing PPG Data: ");
+        Serial.println(payload);
+        
+        client.publish(mqtt_topic, payload.c_str());
     }
 }
 

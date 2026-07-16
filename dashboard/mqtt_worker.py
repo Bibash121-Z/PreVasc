@@ -33,7 +33,7 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
     else:
         print(f"🔴 MQTT Connection failed with status code: {reason_code}")
 
-# --- Block 4: Handshake Receiver (The '1/2' Handshake Logic) ---
+# --- Block 4: Handshake & Data Receiver ---
 def on_message(client, userdata, msg):
     try:
         payload = msg.payload
@@ -45,7 +45,7 @@ def on_message(client, userdata, msg):
         except UnicodeDecodeError:
             return # Ignore binary/raw data for now
 
-        # Handshake Logic:
+        # 1. Handshake Logic:
         # If we receive '1', it is our own sent ping (or ESP32 receiving it). Ignore it.
         if payload_text == "1":
             return
@@ -58,8 +58,28 @@ def on_message(client, userdata, msg):
                 {"type": "broadcast_handshake_success"}
             )
             
+        # 2. Sensor Data Logic:
+        # If the payload contains a comma, it is the raw PPG data from the ESP32: "red_val,ir_val"
+        elif "," in payload_text:
+            try:
+                red_val, ir_val = payload_text.split(",")
+                print(f"📥 Received Sensor Data -> RED: {red_val.strip()} | IR: {ir_val.strip()}")
+                
+                # Optional: Once you are ready to stream to WebSockets, uncomment this block!
+                # async_to_sync(channel_layer.group_send)(
+                #     "sensor_data", 
+                #     {
+                #         "type": "broadcast_sensor_data",
+                #         "red": int(red_val.strip()),
+                #         "ir": int(ir_val.strip())
+                #     }
+                # )
+            except ValueError:
+                # Catch instances where network package drops mid-transmit and payload is corrupted
+                print(f"⚠️ Received poorly formatted data: {payload_text}")
+            
     except Exception as e:
-        print(f"🔴 Background message handshake processing failure: {e}")
+        print(f"🔴 Background message processing failure: {e}")
 
 # --- Block 5: Handshake Publisher (Triggered by Connect Button in Browser) ---
 def send_ping_to_esp():

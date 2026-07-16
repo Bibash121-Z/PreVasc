@@ -1,0 +1,153 @@
+/* static/dashboard/patient.css */
+.patient-search-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    width: 100%;
+}
+
+.search-input-group {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.search-input-group input {
+    flex: 1;
+    padding: 0.6rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    outline: none;
+    background-color: #f8fafc;
+    transition: border-color 0.2s;
+}
+
+.search-input-group input:focus {
+    border-color: #0f766e;
+}
+
+.profile-meta-grid p {
+    margin: 0.65rem 0;
+    color: #334155;
+    font-size: 0.95rem;
+}
+
+.status-badge {
+    background-color: #dcfce7;
+    color: #15803d;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: bold;
+    display: inline-block;
+}
+
+/* History Data Table Design Architecture */
+.history-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.5rem;
+    text-align: left;
+}
+
+.history-data-table th, 
+.history-data-table td {
+    padding: 0.75rem 0.65rem;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 0.9rem;
+}
+
+.history-data-table th {
+    background-color: #f1f5f9;
+    color: #475569;
+    font-weight: 600;
+}
+
+.history-data-table tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+/* Utility layout visibility modifiers */
+.hidden {
+    display: none !important;
+}
+
+/* --- Header Alignment (Now holding title + button actions container) --- */
+.profile-card-header {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    padding-bottom: 0.75rem !important;
+    margin-bottom: 1.25rem !important;
+    width: 100% !important;
+}
+
+/* Container to keep both action buttons aligned on the right side */
+.profile-actions-wrapper {
+    display: flex !important;
+    gap: 0.5rem !important;
+    align-items: center !important;
+}
+
+/* --- Clean Soft Teal Follow Up Button --- */
+.btn-followup-small {
+    background-color: #0f766e !important; /* Matches your search/teal theme */
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 6px !important;
+    padding: 0.5rem 0.95rem !important;
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    font-family: inherit !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: background-color 0.15s ease, transform 0.1s ease !important;
+    line-height: 1 !important;
+    outline: none !important;
+    margin: 0 !important;
+    height: auto !important;
+    width: auto !important;
+}
+
+.btn-followup-small:hover {
+    background-color: #0d5e58 !important; /* Slightly darker teal on hover */
+}
+
+.btn-followup-small:active {
+    transform: scale(0.97) !important;
+}
+
+/* Keep the delete style looking uniform alongside it */
+.btn-delete-small {
+    background-color: #f87171 !important; /* Soft/light red */
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 6px !important;
+    padding: 0.5rem 0.95rem !important;
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    font-family: inherit !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: background-color 0.15s ease, transform 0.1s ease !important;
+    line-height: 1 !important;
+    outline: none !important;
+    margin: 0 !important;
+    height: auto !important;
+    width: auto !important;
+}
+
+.btn-delete-small:hover {
+    background-color: #ef4444 !important;
+}
+
+.btn-delete-small:active {
+    transform: scale(0.97) !important;
+}

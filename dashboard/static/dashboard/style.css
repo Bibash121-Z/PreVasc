@@ -1,0 +1,376 @@
+/* Clean Medical Layout Palette Configuration Variables */
+:root {
+    --bg-base: #f1f5f9;
+    --card-surface: #ffffff;
+    --text-primary: #1e293b;
+    --text-muted: #64748b;
+    --clinical-teal: #0f766e;
+    --clinical-teal-light: #ccfbf1;
+    --pulse-blue: #0284c7;
+    --danger-red: #b91c1c;
+    --danger-bg: #fee2e2;
+    --online-green: #15803d;
+    --online-bg: #dcfce7;
+    --border-color: #e2e8f0;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    padding-bottom: 40px;
+}
+
+/* Navbar Navigation Panel Layout styling */
+.navbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: var(--card-surface);
+    padding: 1rem 2rem;
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.nav-brand {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--clinical-teal);
+}
+
+.nav-links {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.nav-item {
+    text-decoration: none;
+    color: var(--text-muted);
+    font-weight: 500;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.nav-item.active, .nav-item:hover {
+    color: var(--clinical-teal);
+    background-color: var(--clinical-teal-light);
+}
+
+/* Interactive Connect Button Styling */
+.connect-btn {
+    border: none;
+    padding: 0.6rem 1.2rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    border-radius: 50px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.indicator-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.status-disconnected {
+    background-color: var(--border-color);
+    color: var(--text-primary);
+}
+.status-disconnected .indicator-dot {
+    background-color: var(--text-muted);
+}
+
+.status-connected {
+    background-color: var(--online-bg);
+    color: var(--online-green);
+}
+.status-connected .indicator-dot {
+    background-color: var(--online-green);
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(0.9); opacity: 1; }
+    50% { transform: scale(1.2); opacity: 0.5; }
+    100% { transform: scale(0.9); opacity: 1; }
+}
+
+/* Base workspace container - Perfectly Centered Viewport Wrapper */
+.dashboard-workspace {
+    display: grid;
+    grid-template-columns: 0fr 1fr; /* Starts completely collapsed on the left */
+    transition: grid-template-columns 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+    overflow: hidden;
+    width: 100%;
+    max-width: 1440px; 
+    margin: 0 auto; /* Handles perfect center alignment */
+    min-height: calc(100vh - 70px);
+}
+
+/* Hidden state setup for the left side panel */
+.workspace-panel-left {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, padding 0.4s ease;
+    border-right: 1px solid var(--border-color);
+    background-color: var(--bg-base);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    overflow-y: auto;
+}
+
+/* Displaying state for the right side panel */
+.workspace-panel-right {
+    padding: 1.5rem;
+    transition: all 0.4s ease;
+    width: 100%;
+}
+
+/* Master Grid Structure Match to Wireframe */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.2fr;
+    gap: 1.5rem;
+    width: 100%;
+}
+
+/* Structural Dashboard Cards layout */
+.card {
+    background-color: var(--card-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+}
+
+.card-title {
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 1.25rem;
+    border-bottom: 2px solid var(--bg-base);
+    padding-bottom: 0.5rem;
+}
+
+/* Section Forms Inside Cards */
+.patient-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.form-row {
+    display: flex;
+    gap: 1rem;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 0.35rem;
+}
+
+.form-group label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.form-group input, .form-group select {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    outline: none;
+    font-size: 0.95rem;
+    background-color: var(--bg-base);
+}
+
+.form-group input:focus {
+    border-color: var(--clinical-teal);
+    background-color: var(--card-surface);
+}
+
+/* Instrumentation/Control Panel CSS Styling */
+.control-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.control-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.action-btn {
+    width: 100%;
+    padding: 0.75rem;
+    font-weight: bold;
+    font-size: 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s ease;
+}
+
+.btn-start {
+    background-color: var(--clinical-teal);
+    color: white;
+}
+.btn-start:hover { background-color: #0d9488; }
+
+.btn-stop {
+    background-color: var(--border-color);
+    color: var(--text-muted);
+    cursor: not-allowed;
+}
+
+.timer-display {
+    text-align: center;
+    margin-top: 1.5rem;
+    border-top: 1px dashed var(--border-color);
+    padding-top: 1rem;
+}
+
+.timer-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.timer-digits {
+    font-family: monospace;
+    font-size: 1.75rem;
+    font-weight: bold;
+    color: var(--text-primary);
+    margin-top: 0.25rem;
+}
+
+/* Metric Display System Blocks */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.metric-box {
+    background-color: var(--bg-base);
+    border-radius: 8px;
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.metric-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.metric-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--text-primary);
+    margin-top: 0.25rem;
+}
+
+.metric-value-sm {
+    font-size: 1.15rem;
+    font-weight: bold;
+    color: var(--text-primary);
+    margin-top: 0.25rem;
+}
+
+.unit {
+    font-size: 0.75rem;
+    font-weight: normal;
+    color: var(--text-muted);
+}
+
+.highlight-metric {
+    background-color: var(--clinical-teal-light);
+    border: 1px solid var(--clinical-teal);
+}
+.highlight-metric .metric-value {
+    color: var(--clinical-teal);
+}
+
+.wide-box {
+    grid-column: span 2;
+}
+
+.metric-badge {
+    margin-top: 0.35rem;
+    padding: 0.4rem;
+    text-align: center;
+    font-weight: bold;
+    font-size: 0.85rem;
+    border-radius: 4px;
+}
+
+.compliance-normal {
+    background-color: var(--online-bg);
+    color: var(--online-green);
+}
+
+/* Visualization Canvas Blocks Layout spans fully across the lower viewport */
+.chart-card {
+    grid-column: span 3;
+}
+
+.chart-wrapper {
+    position: relative;
+    height: 180px;
+    width: 100%;
+}
+
+/* ==================================================================
+   ACTIVATION CLASSES: Dynamic Realignment when Panel is Open
+   ================================================================== */
+.dashboard-workspace.show-patient-panel {
+    grid-template-columns: 1fr 2fr; /* Responsive 33/66 split workspace screen layout */
+}
+
+.dashboard-workspace.show-patient-panel .workspace-panel-left {
+    opacity: 1;
+    visibility: visible;
+    padding: 1.5rem 0 1.5rem 1.5rem;
+}
+
+/* Responsive adjustment: Squeezes internal grid from 3 columns down to an adaptive 1 or 2 columns */
+.dashboard-workspace.show-patient-panel .dashboard-grid {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.25rem;
+}
+
+/* Protect chart spans within squeezed view layouts */
+.dashboard-workspace.show-patient-panel .chart-card {
+    grid-column: 1 / -1;
+}
+.dashboard-workspace.show-patient-panel .patient-card .form-row {
+    flex-direction: column; /* Stacks Age and Gender on top of each other */
+    gap: 1rem;
+}
+

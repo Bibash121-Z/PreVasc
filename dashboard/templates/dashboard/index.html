@@ -1,0 +1,122 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vascular Diagnostics Dashboard</title>
+    <!-- Link to external clean CSS stylesheet -->
+    <link rel="stylesheet" href="{% static 'dashboard/style.css' %}">
+    
+    <!-- ⚡ Dynamic split-view stylesheet for your teammate's panel -->
+    <link rel="stylesheet" href="{% static 'dashboard/patient.css' %}">
+</head>
+<body>
+
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-brand">🩺PreVasc</div>
+        <div class="nav-links">
+            <a href="#" id="nav-home" class="nav-item active">Home</a>
+            <a href="#" id="nav-patient-data" class="nav-item">Patient Data</a>
+        </div>
+        <!-- Dynamic hardware pairing button -->
+        <button id="hardware-connect-btn" class="connect-btn status-disconnected">
+            <span class="indicator-dot"></span> <span class="btn-text">Connect Device</span>
+        </button>
+    </nav>
+
+    <!-- MAIN DATA PIPELINE GRID WRAPPER -->
+    <main class="dashboard-workspace" id="dashboard-wrapper">
+        
+        <!-- LEFT PANEL: Handled entirely by your teammate (Historical Search & Database Lookup) -->
+        <section class="workspace-panel-left">
+            {% include 'dashboard/patient.html' %}
+        </section>
+        
+        <!-- RIGHT PANEL: Your Active Real-Time Workstation (Form inputs, Metrics) -->
+        <section class="workspace-panel-right">
+            
+            <div class="dashboard-grid">
+                
+                <!-- Block 1: Patient Registration (Current Active Session) -->
+                <section class="card patient-card">
+                    <h2 class="card-title">Patient Information</h2>
+                    <form class="patient-form" id="patient-registration-form">
+                        <div class="form-group">
+                            <label for="p-id">Patient ID:</label>
+                            <input type="text" id="p-id" value="Loading..." disabled style="background-color: #e2e8f0; cursor: not-allowed; font-weight: bold; color: #475569;">
+                        </div>
+                        <div class="form-group">
+                            <label for="p-name">Full Name:</label>
+                            <input type="text" id="p-name" placeholder="Your Name Here" required>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="p-age">Age (yrs):</label>
+                                <input type="number" id="p-age" placeholder="0" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="p-gender">Gender:</label>
+                                <select id="p-gender" required>
+                                    <option value="">Select</option>
+                                    <option value="male">Male</option>
+                                    <option value="female">Female</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="p-height">Height (cm):</label>
+                            <input type="number" id="p-height" placeholder="000" required>
+                        </div>
+                        <button type="submit" class="action-btn btn-start" style="margin-top: 0.5rem;">Register Patient</button>
+                    </form>
+                </section>
+
+                <!-- Block 2: ESP32 Execution Controls -->
+                <section class="card control-card">
+                    <h2 class="card-title">Device Control</h2>
+                    <div class="control-actions">
+                        <button id="start-btn" class="action-btn btn-start">Start Capture</button>
+                        <button id="stop-btn" class="action-btn btn-stop" disabled>Stop / Halt</button>
+                    </div>
+                    <div class="timer-display">
+                        <span class="timer-label">Session Duration</span>
+                        <div id="session-timer" class="timer-digits">00:00:00</div>
+                    </div>
+                </section>
+
+                <!-- Block 3: Diagnostic Results Metric Panel -->
+                <section class="card results-card">
+                    <h2 class="card-title">Diagnostic Metrics</h2>
+                    <div class="metrics-grid">
+                        <div class="metric-box">
+                            <span class="metric-label">Heart Rate</span>
+                            <div class="metric-value"><span id="hr-val">72</span> <span class="unit">BPM</span></div>
+                        </div>
+                        <div class="metric-box highlight-metric">
+                            <span class="metric-label">Estimated PWV</span>
+                            <div class="metric-value"><span id="pwv-val">4.2</span> <span class="unit">m/s</span></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Block 4: Combined System Merge & Archive Save Logic -->
+                <section class="card data-archive-card">
+                    <h2 class="card-title">Data Archiving</h2>
+                    <div class="control-actions">
+                        <button type="button" class="action-btn btn-start" style="background-color: var(--clinical-teal, #0f766e); color: white;">Save Session</button>
+                    </div>
+                </section>
+
+            </div> <!-- End of internal dashboard-grid -->
+            
+        </section> <!-- End of workspace-panel-right -->
+
+    </main>
+
+    <!-- UI Interaction and Dynamic WebSocket Handling -->
+   <script src="{% static 'dashboard/script.js' %}?v=1.0.1"></script>
+</body>
+</html>

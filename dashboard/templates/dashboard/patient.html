@@ -1,0 +1,56 @@
+<!-- templates/dashboard/patient.html -->
+<div class="patient-search-workspace">
+    
+    <!-- Component Block 1: Search Field Input -->
+    <div class="card">
+        <h3 class="card-title">Database Patient Lookup</h3>
+        <div class="search-input-group">
+            <input type="text" id="txt-search-id" ">
+           
+            <button type="button" id="btn-search-submit" class="action-btn btn-start" style="margin: 0;">Search</button>
+        </div>
+    </div>
+
+    <!-- Component Block 2: Profile Metrics View  -->
+   <div class="card" id="patient-profile-card" style="display: none;">
+    <div class="profile-card-header">
+        <h3 class="card-title-inline">Active Clinical Profile</h3>
+         <button type="button" id="btn-followup-profile" class="btn-followup-small">Follow Up</button>
+        <button type="button" id="btn-delete-profile" class="btn-delete-small">
+            Delete Profile
+        </button>
+    </div>
+
+    <div class="profile-meta-grid">
+        <p><strong>System ID:</strong> <span id="val-id"></span></p>
+        <p><strong>Name:</strong> <span id="val-name"></span></p>
+        <p><strong>Age / Sex:</strong> <span id="val-age-sex"></span></p>
+        <p><strong>Height:</strong> <span id="val-height"></span> cm</p>
+    </div>
+</div>
+
+    <!-- Component Block 3: Historical Session Logs -->
+    <div class="card">
+        <h3 class="card-title">Historical Log Diagnostics</h3>
+        <div style="overflow-x: auto;">
+            <table class="history-data-table">
+                <thead>
+                    <tr>
+                        <th>Date Recorded</th>
+                        <th>Avg HR (BPM)</th>
+                        <th>Predicted Risk</th>
+                        <th>BP (SBP/DBP)</th>
+                    </tr>
+                </thead>
+                <tbody id="table-history-body">
+                    <tr>
+                        <td colspan="4" style="text-align: center; color: #64748b; font-style: italic;">
+                            Search for a patient profile above to display diagnostic logs.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+</div>

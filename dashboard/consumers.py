@@ -10,11 +10,16 @@ class SensorConsumer(WebsocketConsumer):
         self.group_name = "sensor_data"
         async_to_sync(self.channel_layer.group_add)(self.group_name, self.channel_name)
         self.accept()
+        
+        # Track that this specific socket is active
+        self.is_connected = True
         print(f"🟢 WebSocket open and accepted: {self.channel_name}")
 
     # --- Block 2: Web browser disconnect handler ---
     # This block cleans up references when the user closes their browser tab
     def disconnect(self, close_code):
+        # Mark as disconnected immediately to block incoming writes
+        self.is_connected = False
         async_to_sync(self.channel_layer.group_discard)(self.group_name, self.channel_name)
         print(f"🔴 WebSocket closed: {self.channel_name}")
 
@@ -33,21 +38,30 @@ class SensorConsumer(WebsocketConsumer):
         except Exception as e:
             print(f"🔴 Error in consumer receive: {e}")
 
-       # --- Block 4: Sensor stream relay handler (UPDATED FOR WEB UI) ---
+    # --- Block 4: Sensor stream relay handler (UPDATED FOR WEB UI + DISCONNECT PROTECTION) ---
     def send_sensor_data(self, event):
-        self.send(text_data=json.dumps({
-            "type": "sensor_stream",
-            "display": event.get("display", []),
-            "systolic_peaks": event.get("systolic_peaks", []),
-            "bpm": event.get("bpm", 0.0)
-        }))
+        # Only attempt to transmit if the socket is actively open
+        if getattr(self, "is_connected", False):
+            try:
+                self.send(text_data=json.dumps({
+                    "type": "sensor_stream",
+                    "display": event.get("display", []),
+                    "systolic_peaks": event.get("systolic_peaks", []),
+                    "bpm": event.get("bpm", 0.0)
+                }))
+            except Exception:
+                # Catch any remaining abrupt closures gracefully
+                self.is_connected = False
         
     # --- Block 5: Handshake verification relay ---
     # This block notifies the front-end interface that the ESP32 successfully responded to the handshake ping
     def broadcast_handshake_success(self, event):
-        print("📥 Relaying handshake success frame to browser front-end UI...")
-        self.send(text_data=json.dumps({
-            "type": "broadcast_handshake_success"
-        }))
-
-     
+        # Only attempt to transmit if the socket is actively open
+        if getattr(self, "is_connected", False):
+            try:
+                print("📥 Relaying handshake success frame to browser front-end UI...")
+                self.send(text_data=json.dumps({
+                    "type": "broadcast_handshake_success"
+                }))
+            except Exception:
+                self.is_connected = False

@@ -1,24 +1,24 @@
-import collections
-import threading
+# ==============================================================================
+# dashboard/peaks.py
+# ==============================================================================
 import numpy as np
-import paho.mqtt.client as mqtt
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from paho.mqtt.enums import CallbackAPIVersion
-from scipy.signal import butter, filtfilt, medfilt, find_peaks, savgol_filter
+from scipy.signal import (
+    butter,
+    filtfilt,
+    medfilt,
+    find_peaks,
+    savgol_filter
+)
 
-# ==============================================================================
-# 1. TUNED 200Hz PPG PROCESSOR CLASS
-# ==============================================================================
 class PPGProcessor:
     def __init__(
         self,
-        fs=200,                  # Scaled to 200Hz
+        fs=100,
         lowcut=0.5,
-        highcut=15.0,            # Tuned to 15Hz to preserve dicrotic notch while removing high-frequency noise
-        butter_order=3,          # Reduced order to 3 to prevent phase distortion and filter ripple
-        median_kernel=5,         # Scaled from 3 to 5 to handle the 200Hz sample density
-        moving_average_window=5  # Scaled from 3 to 5
+        highcut=20.0,
+        butter_order=5,
+        median_kernel=3,
+        moving_average_window=3
     ):
         self.fs = fs
         self.lowcut = lowcut
@@ -38,7 +38,7 @@ class PPGProcessor:
         )
 
         self.baseline = None
-        self.alpha = 0.9975 
+        self.alpha = 0.995
         self.previous_bpm = 0.0
 
     def remove_baseline(self, signal):
@@ -85,16 +85,19 @@ class PPGProcessor:
             mode="same"
         )
 
-    def savgol_smooth(self, signal, window_length=13, polyorder=3):
+    def savgol_smooth(self, signal, window_length=7, polyorder=3):
         n = len(signal)
         wl = window_length
 
         if wl >= n:
             wl = n - 1 if (n - 1) % 2 == 1 else n - 2
+
         if wl <= polyorder:
             return signal
+
         if wl % 2 == 0:
             wl -= 1
+
         if wl < 5:
             return signal
 
@@ -134,12 +137,11 @@ class PPGProcessor:
 
     def estimate_bpm(self, signal):
         n_samples = len(signal)
-        refractory_samples = int(0.35 * self.fs) 
+        refractory_samples = int(0.3 * self.fs)
 
         sig_max = np.max(signal)
         sig_min = np.min(signal)
-
-        adaptive_threshold = sig_min + 0.5 * (sig_max - sig_min)
+        adaptive_threshold = sig_min + 0.6 + (sig_max - sig_max)
 
         systolic_peaks = []
         last_peak_idx = -refractory_samples
@@ -151,24 +153,21 @@ class PPGProcessor:
                         systolic_peaks.append(i)
                         last_peak_idx = i
 
-                        recent_peaks = systolic_peaks[-3:]
-                        adaptive_threshold = 0.6 * np.mean(signal[recent_peaks])
-        
         if len(systolic_peaks) < 2:
-            return self.previous_bpm if self.previous_bpm > 0 else 0.0
-        
+            return 0
+
+        # Calculate sliding threshold on recent peaks
+        recent_peaks = systolic_peaks[-3:]
+        adaptive_threshold = np.mean(signal[recent_peaks])
+
         peak_intervals = np.diff(systolic_peaks)
         mean_interval_samples = np.mean(peak_intervals)
 
-        bpm = (self.fs * 60.0) / mean_interval_samples
-
-        if self.previous_bpm == 0.0:
-            self.previous_bpm = bpm
-        else:
-            self.previous_bpm = (
-                0.8 * self.previous_bpm +
-                0.2 * bpm
-            )
+        bpm = (self.fs * 60) / mean_interval_samples
+        self.previous_bpm = (
+            0.5 * self.previous_bpm +
+            0.5 * bpm
+        )
         return self.previous_bpm
 
     def signal_statistics(self, signal):
@@ -192,40 +191,34 @@ class PPGProcessor:
 
     def detect_systolic_peaks(self, signal):
         signal = np.asarray(signal)
-
         if len(signal) < self.fs * 2:
             return np.array([], dtype=int)
 
         mean = np.mean(signal)
         std = np.std(signal)
+        threshold = mean + 0.35 * std
 
-        threshold = mean + 0.15 * std
         prominence = max(
-            0.15 * (np.max(signal) - np.min(signal)),
+            0.10 * (np.max(signal) - np.min(signal)),
             0.02
         )
+        min_distance = int(0.33 * self.fs)
 
-        min_distance = int(0.40 * self.fs)
-
-        peaks, _ = find_peaks(
+        peaks, properties = find_peaks(
             signal,
             height=threshold,
             distance=min_distance,
             prominence=prominence,
-            width=3 
+            width=2
         )
 
         valid = []
         for p in peaks:
-            if p < 3:
+            if p < 3 or p > len(signal) - 4:
                 continue
-            if p > len(signal) - 4:
-                continue
-
             left = signal[p - 1]
             center = signal[p]
             right = signal[p + 1]
-
             if center > left and center > right:
                 valid.append(p)
 
@@ -243,18 +236,17 @@ class PPGProcessor:
                 if i + 1 < len(systolic_peaks)
                 else n
             )
-
             segment = signal[p_start:p_end]
             m = len(segment)
 
-            if m < 30:
+            if m < 15:
                 continue
 
-            lo = max(int(0.06 * m), 4) 
+            lo = max(int(0.06 * m), 2)
             window = segment[lo:]
             wlen = len(window)
 
-            if wlen < 20:
+            if wlen < 10:
                 continue
 
             local_range = np.max(window) - np.min(window)
@@ -262,7 +254,7 @@ class PPGProcessor:
                 continue
 
             min_prominence = max(0.05 * local_range, 1e-6)
-            min_distance = max(int(0.05 * self.fs), 4) 
+            min_distance = max(int(0.05 * self.fs), 2)
 
             minima, _ = find_peaks(
                 -window,
@@ -271,11 +263,11 @@ class PPGProcessor:
             )
 
             diastolic_idx = None
-            margin = max(int(0.10 * wlen), 8) 
+            margin = max(int(0.10 * wlen), 4)
 
             for cand in minima:
                 remaining = window[cand:]
-                if len(remaining) - margin < 10: 
+                if len(remaining) - margin < 5:
                     continue
 
                 search_zone = remaining[: len(remaining) - margin]
@@ -305,7 +297,7 @@ class PPGProcessor:
     def preprocess_signal(self, signal):
         signal = np.asarray(signal, dtype=float)
 
-        if len(signal) < 300: 
+        if len(signal) < 200:
             return {
                 "raw": signal,
                 "baseline_removed": signal,
@@ -324,14 +316,10 @@ class PPGProcessor:
 
         baseline_removed = self.remove_baseline(signal)
         median = self.median_filter(baseline_removed)
-
         light_display = self.normalize_display(median)
 
         filtered = self.butterworth_filter(median)
-        filtered = self.savgol_smooth(filtered, window_length=13, polyorder=3)
-
-        # INVERT SIGNAL
-        filtered = -filtered
+        filtered = self.savgol_smooth(filtered, window_length=7, polyorder=3)
 
         frequency = self.dominant_frequency(filtered)
         bpm = self.estimate_bpm(filtered)
@@ -342,11 +330,7 @@ class PPGProcessor:
         sdppg = self.third_derivative(filtered)
 
         systolic_peaks = self.detect_systolic_peaks(filtered)
-        diastolic_peaks = self.detect_diastolic(
-            filtered,
-            systolic_peaks
-        )
-
+        diastolic_peaks = self.detect_diastolic(filtered, systolic_peaks)
         display = self.normalize_display(filtered)
 
         return {
@@ -364,136 +348,3 @@ class PPGProcessor:
             "systolic_peaks": systolic_peaks,
             "diastolic_peaks": diastolic_peaks
         }
-
-
-# ==============================================================================
-# 2. MAIN MQTT & GRAPHING TEST BENCH
-# ==============================================================================
-BROKER = "192.168.43.252"
-PORT = 1883
-TOPIC = "sensor/vascular"
-
-FS = 200            # Matches ESP32 200Hz output
-BUFFER_SIZE = 1200  # 6 seconds of rolling memory history
-WINDOW_SECONDS = 4  # Time window shown on screen
-
-raw_ir_buffer = collections.deque(maxlen=BUFFER_SIZE)
-data_lock = threading.Lock()
-processor = PPGProcessor(fs=FS)
-
-def on_connect(client, userdata, flags, reason_code, properties=None):
-    if reason_code == 0:
-        print("🟢 Connected to local broker. Real-time tuned pipeline running...")
-        client.subscribe(TOPIC)
-    else:
-        print(f"🔴 Connection failed with code {reason_code}")
-
-def on_message(client, userdata, msg):
-    try:
-        payload_str = msg.payload.decode('utf-8').strip()
-        if "," in payload_str:
-            _, ir_val_str = payload_str.split(",")
-            ir_val = float(ir_val_str.strip())
-            
-            with data_lock:
-                raw_ir_buffer.append(ir_val)
-    except Exception:
-        pass
-
-def run_mqtt():
-    client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
-    client.on_connect = on_connect
-    client.on_message = on_message
-    client.connect(BROKER, PORT, 60)
-    client.loop_forever()
-
-def update_plot(frame, raw_line, filtered_line, systolic_points, diastolic_points, stats_text, ax_raw, ax_filt):
-    with data_lock:
-        signal_copy = list(raw_ir_buffer)
-
-    if len(signal_copy) < 300:
-        return raw_line, filtered_line, systolic_points, diastolic_points, stats_text
-
-    raw_signal = np.array(signal_copy)
-    x = np.arange(len(raw_signal)) / FS
-    last_x = x[-1]
-
-    raw_line.set_data(x, raw_signal)
-    ax_raw.set_xlim(last_x - WINDOW_SECONDS, last_x)
-    
-    recent_raw = raw_signal[-int(FS * WINDOW_SECONDS):]
-    ymin, ymax = np.min(recent_raw), np.max(recent_raw)
-    margin = max((ymax - ymin) * 0.1, 50)
-    ax_raw.set_ylim(ymin - margin, ymax + margin)
-
-    results = processor.preprocess_signal(raw_signal)
-    
-    if results is not None and len(results["display"]) > 0:
-        filtered = results["display"]
-        systolic = results["systolic_peaks"]
-        diastolic = results["diastolic_peaks"]
-        bpm = results["bpm"]
-
-        filtered_line.set_data(x, filtered)
-        ax_filt.set_xlim(last_x - WINDOW_SECONDS, last_x)
-
-        if len(systolic):
-            systolic_points.set_data(x[systolic], filtered[systolic])
-        else:
-            systolic_points.set_data([], [])
-
-        if len(diastolic):
-            diastolic_points.set_data(x[diastolic], filtered[diastolic])
-        else:
-            diastolic_points.set_data([], [])
-
-        stats_text.set_text(f"HR: {bpm:5.1f} BPM")
-        print(f"⚡ [Heart Rate]: {bpm:5.1f} BPM | Detected Systolic: {len(systolic)} | Diastolic: {len(diastolic)}")
-
-    return raw_line, filtered_line, systolic_points, diastolic_points, stats_text
-
-def main():
-    mqtt_thread = threading.Thread(target=run_mqtt, daemon=True)
-    mqtt_thread.start()
-
-    plt.style.use("dark_background")
-    fig, (ax_raw, ax_filt) = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
-    fig.canvas.manager.set_window_title("Clean Real-Time PPG Dual-Peak Analyzer (Tuned 200Hz)")
-
-    for ax in [ax_raw, ax_filt]:
-        ax.set_axis_off()
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
-        ax.grid(False)
-
-    raw_line, = ax_raw.plot([], [], color="#ff4d4d", linewidth=1.5, label="Raw")
-    filtered_line, = ax_filt.plot([], [], color="#00ffcc", linewidth=2.5, label="Filtered")
-    
-    systolic_points, = ax_filt.plot([], [], "o", color="#ff007f", markersize=8, label="Systole")
-    diastolic_points, = ax_filt.plot([], [], "o", color="#39ff14", markersize=8, label="Diastole")
-
-    stats_text = ax_filt.text(
-        0.02, 0.90, "Connecting...",
-        transform=ax_filt.transAxes,
-        fontsize=16,
-        fontweight="bold",
-        color="#00ffcc",
-        verticalalignment="top",
-    )
-
-    ax_filt.set_ylim(-1.1, 1.1)
-
-    ani = animation.FuncAnimation(
-        fig,
-        update_plot,
-        fargs=(raw_line, filtered_line, systolic_points, diastolic_points, stats_text, ax_raw, ax_filt),
-        interval=33, 
-        blit=True, 
-        cache_frame_data=False
-    )
-
-    plt.tight_layout()
-    plt.show()
-
-if __name__ == "__main__":
-    main()

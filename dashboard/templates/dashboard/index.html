@@ -101,7 +101,27 @@
                         </div>
                     </div>
                 </section>
+                <!-- PCG Acoustic Signal Canvas Box -->
+                <section class="card chart-card pcg-chart-box">
+                    <h2 class="card-title">Phonocardiogram (PCG Sound Signal)</h2>
+                    <div class="chart-wrapper" style="position: relative; height: 220px; width: 100%;">
+                        <canvas id="pcgChart"></canvas>
+                    </div>
+                </section>
 
+                <!-- PPG Volumetric Signal Canvas Box -->
+                <section class="card chart-card ppg-chart-box">
+                    <h2 class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>Photoplethysmogram (PPG Pulse Signal)</span>
+                        <span id="ppg-buffer-indicator" style="color: #f59e0b; font-size: 11px; font-weight: normal; display: none;">
+                            ⚠️ CALIBRATING SIGNAL...
+                        </span>
+                    </h2>
+                    <div class="chart-wrapper" style="position: relative; height: 220px; width: 100%;">
+                        <canvas id="ppgChart"></canvas>
+                    </div>
+                </section>
+                
                 <!-- Block 4: Combined System Merge & Archive Save Logic -->
                 <section class="card data-archive-card">
                     <h2 class="card-title">Data Archiving</h2>

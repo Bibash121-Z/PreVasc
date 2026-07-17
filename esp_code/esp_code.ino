@@ -6,7 +6,7 @@
 // --- Block 1: LAN Network & Local Broker Setup ---
 const char* ssid = "MrZ";            // Your Hotspot Name
 const char* password = "12345678";    // Your Hotspot Password
-const char* mqtt_server = "192.168.43.252"; // Your PC's active hotspot IP
+const char* mqtt_server = "192.168.43.157"; // Your PC's active hotspot IP
 const int mqtt_port = 1883;                        
 const char* mqtt_topic = "sensor/vascular";
 

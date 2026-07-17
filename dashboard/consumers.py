@@ -65,3 +65,31 @@ class SensorConsumer(WebsocketConsumer):
                 }))
             except Exception:
                 self.is_connected = False
+
+        # --- Block 3: Browser actions receiver ---
+    # This block reads custom button clicks from your browser page and triggers the MQTT handlers
+    def receive(self, text_data):
+        try:
+            data = json.loads(text_data)
+            action = data.get('action')
+            
+            # --- START CAPTURE ACTION ---
+            if action == 'start_capture':
+                print("⚡ UI requested Start Capture! Publishing START_MEASURE to ESP32...")
+                from .mqtt_worker import send_command_to_esp
+                send_command_to_esp("START_MEASURE")
+                
+            # --- STOP CAPTURE ACTION ---
+            elif action == 'stop_capture':
+                print("🛑 UI requested Stop Capture! Publishing STOP_MEASURE to ESP32...")
+                from .mqtt_worker import send_command_to_esp
+                send_command_to_esp("STOP_MEASURE")
+                
+            # Keep your old handshake verification logic here if you still use it
+            elif action == 'connect_device':
+                print("⚡ Web click detected! Triggering outbound MQTT Handshake request...")
+                from .mqtt_worker import send_ping_to_esp
+                send_ping_to_esp()
+                
+        except Exception as e:
+            print(f"🔴 Error in consumer receive: {e}")

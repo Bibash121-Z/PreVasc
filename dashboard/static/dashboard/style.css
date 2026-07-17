@@ -241,9 +241,35 @@ body {
 .btn-start:hover { background-color: #0d9488; }
 
 .btn-stop {
-    background-color: var(--border-color);
-    color: var(--text-muted);
-    cursor: not-allowed;
+    background-color: #ef4444; /* Modern, clear medical crimson */
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.btn-stop:hover {
+    background-color: #dc2626; /* Darker red on hover */
+}
+
+.btn-stop:active {
+    transform: scale(0.98); /* Slight click feedback */
+}
+
+
+/* --- Reset Timer Button Styles --- */
+.btn-reset {
+    background-color: #64748b; /* Clean, professional slate-gray */
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.btn-reset:hover {
+    background-color: #475569; /* Darker slate on hover */
+}
+
+.btn-reset:active {
+    transform: scale(0.98); /* Slight click feedback */
 }
 
 .timer-display {

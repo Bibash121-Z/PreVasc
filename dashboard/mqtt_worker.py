@@ -7,9 +7,10 @@ from paho.mqtt.enums import CallbackAPIVersion
 from .peak import PPGProcessor  # Import the processor framework
 
 # --- Block 1: Local Hotspot MQTT Configuration ---
-BROKER = "192.168.43.252" 
+BROKER = "192.168.43.157"  # Adjusted to localhost (or use your active laptop IP)
 PORT = 1883
 TOPIC = "sensor/vascular"
+CONTROL_TOPIC = "sensor/control"  # Dedicated topic for START/STOP actions
 
 MQTT_SERVER = BROKER
 MQTT_PORT = PORT
@@ -35,6 +36,8 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
             except OSError: pass
         print(f"📡 Subscribing to local topic: '{TOPIC}'...")
         client.subscribe(TOPIC)
+        # Also subscribe to the control topic if the backend needs to listen to its own commands
+        client.subscribe(CONTROL_TOPIC)
     else:
         print(f"🔴 MQTT Connection failed with status code: {reason_code}")
 
@@ -47,6 +50,10 @@ def on_message(client, userdata, msg):
         try:
             payload_text = payload.decode('utf-8').strip()
         except UnicodeDecodeError:
+            return
+
+        # If the message is arriving on the control topic, ignore processing it as sensor data
+        if msg.topic == CONTROL_TOPIC:
             return
 
         if payload_text == "1":
@@ -87,10 +94,29 @@ def on_message(client, userdata, msg):
     except Exception as e:
         print(f"🔴 Background message processing failure: {e}")
 
+# --- Block 5: Outbound Command Handlers ---
+
 def send_ping_to_esp():
+    """
+    Sends the initial handshake ping ('1') to the ESP32 using the primary data topic.
+    """
     print(f"📤 Publishing local handshake request '1' to topic '{TOPIC}'...")
     client.publish(TOPIC, "1", retain=False)
 
+def send_command_to_esp(command_string):
+    """
+    Publishes device commands (like 'START_MEASURE' or 'STOP_MEASURE') to the ESP32.
+    Reuses the client instance, broker settings, and utilizes the control channel.
+    """
+    try:
+        print(f"📡 Publishing control command '{command_string}' to topic '{CONTROL_TOPIC}'...")
+        # Use the already initialized global client instance to publish
+        client.publish(CONTROL_TOPIC, command_string, retain=False)
+    except Exception as e:
+        print(f"❌ Failed to publish MQTT command '{command_string}': {e}")
+
+
+# --- Block 6: MQTT Client Instantiation & Hooks ---
 client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, transport="tcp")
 mqtt_client = client
 

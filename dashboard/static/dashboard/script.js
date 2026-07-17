@@ -441,6 +441,96 @@ async function loadNextPatientId() {
   }
 }
 
+// Locate your existing WebSocket variable (usually named socket or chatSocket)
+// Example: const socket = new WebSocket('ws://' + window.location.host + '/ws/sensor/');
+
+const startBtn = document.getElementById("start-btn");
+const stopBtn = document.getElementById("stop-btn");
+const resetBtn = document.getElementById("reset-btn");
+const timerDisplay = document.getElementById("session-timer");
+
+// Timer state variables
+let timerInterval = null;
+let totalSeconds = 0;
+
+// Helper function to format seconds into HH:MM:SS
+function formatTime(seconds) {
+    const hrs = String(Math.floor(seconds / 3600)).padStart(2, '0');
+    const mins = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+    const secs = String(seconds % 60).padStart(2, '0');
+    return `${hrs}:${mins}:${secs}`;
+}
+
+// Function to start the visual timer
+function startTimer() {
+    // Prevent starting multiple intervals if clicked twice
+    if (timerInterval !== null) return; 
+    
+    // Optional: Reset timer on new start (uncomment line below if desired)
+    // totalSeconds = 0; timerDisplay.textContent = "00:00:00";
+
+    timerInterval = setInterval(() => {
+        totalSeconds++;
+        timerDisplay.textContent = formatTime(totalSeconds);
+    }, 1000); // Triggers every 1 second
+}
+
+// Function to stop/pause the timer
+function stopTimer() {
+    if (timerInterval !== null) {
+        clearInterval(timerInterval);
+        timerInterval = null; // Clear the handle
+    }
+}
+function resetTimer() {
+    stopTimer(); // Automatically pauses the timer if it's running
+    totalSeconds = 0;
+    timerDisplay.textContent = "00:00:00";
+}
+
+
+// --- 1. Handle Start Button click ---
+startBtn.addEventListener("click", () => {
+    console.log("⚡ Clicked 'Start Capture' -> Sending action to Django backend...");
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+            'action': 'start_capture'
+        }));
+        
+        // Start the UI timer
+        startTimer();
+    } else {
+        console.error("❌ WebSocket is closed. Cannot send start command.");
+    }
+});
+
+
+// --- 2. Handle Stop Button click ---
+stopBtn.addEventListener("click", () => {
+    console.log("🛑 Clicked 'Stop / Halt' -> Sending action to Django backend...");
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+            'action': 'stop_capture'
+        }));
+        
+        // Stop/Pause the UI timer
+        stopTimer();
+    } else {
+        console.error("❌ WebSocket is closed. Cannot send stop command.");
+    }
+});
+
+//reset timer
+resetBtn.addEventListener("click", () => {
+    console.log("🔄 Clicked 'Reset Timer' -> Resetting visual duration display...");
+    resetTimer();
+});
+
+
+
+
+
+
 // ==============================================================================
 // Dual Canvas Real-Time Chart Rendering Engines
 // ==============================================================================

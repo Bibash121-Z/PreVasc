@@ -6,18 +6,25 @@
 // --- Block 1: LAN Network & Local Broker Setup ---
 const char* ssid = "MrZ";            // Your Hotspot Name
 const char* password = "12345678";    // Your Hotspot Password
-const char* mqtt_server = "192.168.43.157"; // Your PC's active hotspot IP
+
+// ⚠️ IMPORTANT: Change this to your laptop's current active hotspot IP!
+const char* mqtt_server = "192.168.43.157"; 
+
 const int mqtt_port = 1883;                        
 const char* mqtt_topic = "sensor/vascular";
+const char* mqtt_control_topic = "sensor/control"; // Dedicated control channel
 
 WiFiClient espClient; 
 PubSubClient client(espClient);
 MAX30105 particleSensor;
 
-// --- Block 2: Sampling Configuration (200 Hz) ---
-const uint16_t SAMPLE_RATE = 200;              // 200 Hz for high fidelity
+// --- Block 2: Sampling & Control Configuration (200 Hz) ---
+const uint16_t SAMPLE_RATE = 100;              // 200 Hz for high fidelity
 const uint32_t SAMPLE_PERIOD = 1000000UL / SAMPLE_RATE; // Sample period in microseconds (5000 µs)
 uint32_t lastSample = 0;
+
+// Non-blocking control flag for starting/stopping measurements
+bool is_measuring = false; 
 
 // --- Block 3: Inbound data receiver handler ---
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -27,11 +34,28 @@ void callback(char* topic, byte* payload, unsigned int length) {
     }
     message.trim();
 
-    Serial.println("Received from Web: " + message);
+    Serial.print("Received from Topic [");
+    Serial.print(topic);
+    Serial.print("]: ");
+    Serial.println(message);
 
-    if (message == "1") {
+    // Handshake check on the data topic
+    if (String(topic) == mqtt_topic && message == "1") {
         Serial.println("Handshake '1' matched! Replying with '2' to confirm...");
         client.publish(mqtt_topic, "2");
+    }
+    
+    // START/STOP checks on the control topic
+    if (String(topic) == mqtt_control_topic) {
+        if (message == "START_MEASURE") {
+            is_measuring = true;
+            lastSample = micros(); // Reset time tracker
+            Serial.println("▶️ START Command Received. Initiating sensor acquisition loop.");
+        } 
+        else if (message == "STOP_MEASURE") {
+            is_measuring = false;
+            Serial.println("⏸️ STOP Command Received. Halting acquisition loop.");
+        }
     }
 }
 
@@ -47,7 +71,7 @@ void setup_wifi() {
         delay(500);
         Serial.print(".");
     }
-    Serial.println("\n🟢 Wi-Fi Connected!");
+    Serial.println("\n Wi-Fi Connected!");
     Serial.print("ESP32 IP Address: ");
     Serial.println(WiFi.localIP());
 }
@@ -55,14 +79,18 @@ void setup_wifi() {
 // --- Block 5: Local Server Reconnection Loop ---
 void reconnect() {
     while (!client.connected()) {
-        Serial.print("Attempting local MQTT connection to PC...");
+        Serial.print("Attempting local MQTT connection to PC/Laptop...");
         String clientId = "ESP32Client-" + String(random(0, 1000));
         
         if (client.connect(clientId.c_str())) { 
-            Serial.println("🟢 Connected to Local Broker!");
+            Serial.println(" Connected to Local Broker!");
+            
+            // Subscribe to both main and control channels
             client.subscribe(mqtt_topic);
+            client.subscribe(mqtt_control_topic);
+            Serial.println("Subscribed to data and control topics successfully.");
         } else {
-            Serial.print("🔴 Failed, rc=");
+            Serial.print(" Failed, rc=");
             Serial.print(client.state());
             Serial.println(" Retrying in 5 seconds...");
             delay(5000);
@@ -80,10 +108,10 @@ void masterConnectSetup() {
     
     Serial.print("Initializing MAX30102...");
     if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {
-        Serial.println("\n❌ MAX30102 was not found. Please check wiring/power!");
+        Serial.println("\n MAX30102 was not found. Please check wiring/power!");
         while (1); 
     }
-    Serial.println("🟢 MAX30102 Initialized!");
+    Serial.println(" MAX30102 Initialized!");
 
     // Hardware parameters configured for exact 200 Hz operation
     particleSensor.setup(
@@ -113,15 +141,18 @@ void masterConnectLoop() {
     }
     client.loop();
 
-    // High-precision microsecond sampling interval checks
+    // If the browser dashboard hasn't clicked "Start Capture", skip the sampling block
+    if (!is_measuring) {
+        return; 
+    }
+
+    // High-precision microsecond sampling interval checks (Runs only when is_measuring == true)
     if (micros() - lastSample >= SAMPLE_PERIOD) {
         lastSample += SAMPLE_PERIOD;
 
         uint32_t redValue = particleSensor.getRed();
         uint32_t irValue = particleSensor.getIR();
 
-        // Removed the "irValue < 50000" threshold block.
-        // Data streams continuously to allow algorithms to dynamically adapt to finger placement.
         String payload = String(redValue) + "," + String(irValue);
         
         Serial.print("Publishing PPG Data: ");

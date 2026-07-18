@@ -7,7 +7,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 from .peak import PPGProcessor  # Import the processor framework
 
 # --- Block 1: Local Hotspot MQTT Configuration ---
-BROKER = "192.168.43.157"  # Adjusted to localhost (or use your active laptop IP)
+BROKER = "192.168.43.220"  # Adjusted to localhost (or use your active laptop IP)
 PORT = 1883
 TOPIC = "sensor/vascular"
 CONTROL_TOPIC = "sensor/control"  # Dedicated topic for START/STOP actions

@@ -9,5 +9,8 @@ class Patient(models.Model):
     gender = models.CharField(max_length=50)
     height = models.FloatField()
 
+    # --- ADD THIS SINGLE NEW FIELD HERE ---
+    heart_rate = models.FloatField(null=True, blank=True)
+
     def __str__(self):
         return f"Patient {self.id}: {self.name}"

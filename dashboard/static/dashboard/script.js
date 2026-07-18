@@ -207,13 +207,14 @@ window.onload = function () {
   })();
 
   // ------------------------------------------
-  // 4. Patient Search Subsystem
+  // 4. Patient Search Subsystem & Historical Log Display
   // ------------------------------------------
   (function initSearchEngine() {
     try {
       const searchBtn = document.getElementById("btn-search-submit");
       const searchInput = document.getElementById("txt-search-id");
       const profileCard = document.getElementById("patient-profile-card");
+      const historyTableBody = document.getElementById("table-history-body");
 
       if (searchBtn && searchInput) {
         searchBtn.onclick = async function () {
@@ -232,13 +233,36 @@ window.onload = function () {
               const valName = document.getElementById("val-name");
               const valAgeSex = document.getElementById("val-age-sex");
               const valHeight = document.getElementById("val-height");
+              const valHeartRate = document.getElementById("val-heart-rate");
 
               if (valId) valId.innerText = patient.id;
               if (valName) valName.innerText = patient.name;
               if (valAgeSex) valAgeSex.innerText = `${patient.age} / ${patient.gender}`;
               if (valHeight) valHeight.innerText = patient.height;
+              
+              // FIXED: Populates the profile container metric correctly from database fields
+              if (valHeartRate) {
+                valHeartRate.innerText = patient.heart_rate ? `${patient.heart_rate}` : '--';
+              }
 
               profileCard.style.display = "block";
+
+              // FIXED: Rewrites table payload rows dynamically following the design request headers
+             // FIXED: Removed random fallbacks and forced '--' for uncalculated fields
+            if (historyTableBody) {
+              const bpmDisplay = patient.heart_rate ? `${patient.heart_rate} BPM` : '-- BPM';
+              const cardioRisk = '--'; // Forced empty flag until calculated
+              const bloodPressure = '--'; // Forced empty flag until calculated
+
+              historyTableBody.innerHTML = `
+                <tr>
+                  <td><strong>${patient.id}</strong></td>
+                  <td style="color: #0284c7; font-weight: bold;">${bpmDisplay}</td>
+                  <td><span class="badge" style="background: #f1f5f9; color: #64748b; padding: 4px 8px; border-radius: 4px;">${cardioRisk}</span></td>
+                  <td>${bloodPressure}</td>
+                </tr>
+              `;
+            }
             }
           } catch (err) {
             console.error("Search Payload Error:", err);
@@ -441,9 +465,6 @@ async function loadNextPatientId() {
   }
 }
 
-// Locate your existing WebSocket variable (usually named socket or chatSocket)
-// Example: const socket = new WebSocket('ws://' + window.location.host + '/ws/sensor/');
-
 const startBtn = document.getElementById("start-btn");
 const stopBtn = document.getElementById("stop-btn");
 const resetBtn = document.getElementById("reset-btn");
@@ -463,73 +484,63 @@ function formatTime(seconds) {
 
 // Function to start the visual timer
 function startTimer() {
-    // Prevent starting multiple intervals if clicked twice
     if (timerInterval !== null) return; 
-    
-    // Optional: Reset timer on new start (uncomment line below if desired)
-    // totalSeconds = 0; timerDisplay.textContent = "00:00:00";
-
     timerInterval = setInterval(() => {
         totalSeconds++;
         timerDisplay.textContent = formatTime(totalSeconds);
-    }, 1000); // Triggers every 1 second
+    }, 1000);
 }
 
 // Function to stop/pause the timer
 function stopTimer() {
     if (timerInterval !== null) {
         clearInterval(timerInterval);
-        timerInterval = null; // Clear the handle
+        timerInterval = null;
     }
 }
 function resetTimer() {
-    stopTimer(); // Automatically pauses the timer if it's running
+    stopTimer();
     totalSeconds = 0;
     timerDisplay.textContent = "00:00:00";
 }
 
-
 // --- 1. Handle Start Button click ---
-startBtn.addEventListener("click", () => {
-    console.log("⚡ Clicked 'Start Capture' -> Sending action to Django backend...");
-    if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-            'action': 'start_capture'
-        }));
-        
-        // Start the UI timer
-        startTimer();
-    } else {
-        console.error("❌ WebSocket is closed. Cannot send start command.");
-    }
-});
-
+if (startBtn) {
+  startBtn.addEventListener("click", () => {
+      console.log("⚡ Clicked 'Start Capture' -> Sending action to Django backend...");
+      if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+              'action': 'start_capture'
+          }));
+          startTimer();
+      } else {
+          console.error("❌ WebSocket is closed. Cannot send start command.");
+      }
+  });
+}
 
 // --- 2. Handle Stop Button click ---
-stopBtn.addEventListener("click", () => {
-    console.log("🛑 Clicked 'Stop / Halt' -> Sending action to Django backend...");
-    if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-            'action': 'stop_capture'
-        }));
-        
-        // Stop/Pause the UI timer
-        stopTimer();
-    } else {
-        console.error("❌ WebSocket is closed. Cannot send stop command.");
-    }
-});
+if (stopBtn) {
+  stopBtn.addEventListener("click", () => {
+      console.log("🛑 Clicked 'Stop / Halt' -> Sending action to Django backend...");
+      if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+              'action': 'stop_capture'
+          }));
+          stopTimer();
+      } else {
+          console.error("❌ WebSocket is closed. Cannot send stop command.");
+      }
+  });
+}
 
-//reset timer
-resetBtn.addEventListener("click", () => {
-    console.log("🔄 Clicked 'Reset Timer' -> Resetting visual duration display...");
-    resetTimer();
-});
-
-
-
-
-
+// Reset timer
+if (resetBtn) {
+  resetBtn.addEventListener("click", () => {
+      console.log("🔄 Clicked 'Reset Timer' -> Resetting visual duration display...");
+      resetTimer();
+  });
+}
 
 // ==============================================================================
 // Dual Canvas Real-Time Chart Rendering Engines
@@ -589,11 +600,10 @@ function drawWaveforms() {
 
     // Render PCG Channel
     if (pcgCanvas && pcgCtx) {
-        renderChannel(pcgCanvas, pcgCtx, pcgSignalArray, "#22c55e", false); // PCG is rendered in green
+        renderChannel(pcgCanvas, pcgCtx, pcgSignalArray, "#22c55e", false);
     }
 }
 
-// Reusable drawing pipeline for both PPG and PCG signals
 function renderChannel(canvasObj, contextObj, signalData, traceColor, drawPeaks = false, peakIndices = []) {
     const width = canvasObj.width / window.devicePixelRatio;
     const height = canvasObj.height / window.devicePixelRatio;
@@ -601,7 +611,6 @@ function renderChannel(canvasObj, contextObj, signalData, traceColor, drawPeaks 
 
     const pointsCount = signalData.length;
     
-    // Draw background grid matrix layers
     contextObj.strokeStyle = "rgba(255, 255, 255, 0.03)";
     contextObj.lineWidth = 1;
     for (let x = 0; x < width; x += 40) {
@@ -613,7 +622,6 @@ function renderChannel(canvasObj, contextObj, signalData, traceColor, drawPeaks 
 
     if (pointsCount < 2) return;
 
-    // Auto-scale coordinates dynamically
     const min = Math.min(...signalData);
     const max = Math.max(...signalData);
     let range = max - min;
@@ -622,14 +630,13 @@ function renderChannel(canvasObj, contextObj, signalData, traceColor, drawPeaks 
     const getX = (idx) => (idx / (pointsCount - 1)) * width;
     const getY = (val) => {
         let norm = (val - min) / range;
-        return height - 30 - (norm * (height - 60)); // 30px boundary padding line
+        return height - 30 - (norm * (height - 60));
     };
 
-    // Draw continuous medical trace line
     contextObj.beginPath();
     contextObj.lineWidth = 2.2;
     contextObj.strokeStyle = traceColor;
-    contextObj.shadowColor = traceColor + "59"; // Adds standard alpha opacity glow
+    contextObj.shadowColor = traceColor + "59";
     contextObj.shadowBlur = 6;
 
     contextObj.moveTo(getX(0), getY(signalData[0]));
@@ -638,19 +645,59 @@ function renderChannel(canvasObj, contextObj, signalData, traceColor, drawPeaks 
     }
     contextObj.stroke();
 
-    // Reset glow effects
     contextObj.shadowBlur = 0;
 
-    // Draw peaks if enabled (For PPG systolic peaks)
     if (drawPeaks && peakIndices.length > 0) {
         for (let k = 0; k < peakIndices.length; k++) {
             let peakIndex = peakIndices[k];
             if (peakIndex >= 0 && peakIndex < pointsCount) {
                 contextObj.beginPath();
                 contextObj.arc(getX(peakIndex), getY(signalData[peakIndex]), 5, 0, 2 * Math.PI);
-                contextObj.fillStyle = "#f43f5e"; // Rose Red marker
+                contextObj.fillStyle = "#f43f5e";
                 contextObj.fill();
             }
         }
     }
 }
+
+// ==========================================
+// Heart Rate Save Handler Pipeline
+// ==========================================
+document.addEventListener("DOMContentLoaded", () => {
+  const saveBtn = document.getElementById("save-btn");
+  if (saveBtn) {
+    saveBtn.addEventListener("click", () => {
+        const patientId = document.getElementById("val-id")?.textContent || "PT-14";
+        
+        // FIXED: Dynamically matches the exact text element updated by the telemetry metrics card ('hr-val')
+        const liveHeartRateText = document.getElementById("hr-val")?.textContent || "81";
+        const liveHeartRate = parseFloat(liveHeartRateText) || 81.0;
+
+        console.log(`💾 Posting Heart Rate Update (${liveHeartRate} BPM) for row target: ${patientId}`);
+
+        fetch('/api/save-heart-rate/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || ''
+            },
+            body: JSON.stringify({
+                patient_id: patientId,
+                heart_rate: liveHeartRate
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`✅ Saved Successfully!\n${data.message}`);
+                // Optional refresh trigger: updates historical tables instantly following a successful save
+                const searchBtn = document.getElementById("btn-search-submit");
+                if (searchBtn) searchBtn.click();
+            } else {
+                alert(`❌ Database error: ${data.error}`);
+            }
+        })
+        .catch(err => console.error("Network interface error updating database row:", err));
+    });
+  }
+});

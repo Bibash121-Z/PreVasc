@@ -81,6 +81,8 @@
                         <button id="start-btn" class="action-btn btn-start">Start Capture</button>
                         <button id="stop-btn" class="action-btn btn-stop">Stop / Halt</button>
                         <button id="reset-btn" class="action-btn btn-reset">Reset Timer</button>
+                        <!-- Below your reset button inside Device Control -->
+<button id="save-btn" class="action-btn btn-save" style="background-color: #0284c7; color: white; margin-top: 8px;">Save Session</button>
                     </div>
                     <div class="timer-display">
                         <span class="timer-label">Session Duration</span>
@@ -94,8 +96,8 @@
                     <div class="metrics-grid">
                         <div class="metric-box">
                             <span class="metric-label">Heart Rate</span>
-                            <!-- <div class="metric-value"><span id="hr-val">0</span> <span class="unit">BPM</span></div> -->
-                         <div class="metric-value"><span>81</span> <span class="unit">BPM</span></div>
+                            <div class="metric-value"><span id="hr-val">0</span> <span class="unit">BPM</span></div> 
+                    
                         </div> 
                          <div class="metric-box">
                             <span class="metric-label">Estimated PWV</span>
@@ -127,14 +129,6 @@
                 </section>
 
                 
-                
-                <!-- Block 4: Combined System Merge & Archive Save Logic -->
-                <section class="card data-archive-card">
-                    <h2 class="card-title">Data Archiving</h2>
-                    <div class="control-actions">
-                        <button type="button" class="action-btn btn-start" style="background-color: var(--clinical-teal, #0f766e); color: white;">Save Session</button>
-                    </div>
-                </section>
 
             </div> <!-- End of internal dashboard-grid -->
             

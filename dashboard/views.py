@@ -90,12 +90,14 @@ def search_patient_api(request):
                 'name': patient.name,
                 'age': patient.age,
                 'gender': patient.gender.capitalize(),
-                'height': patient.height
+                'height': patient.height,
+                
+                # --- THIS IS THE NEW LINE WE ADDED BESIDE THE REST ---
+                'heart_rate': patient.heart_rate if patient.heart_rate else '--'
             }
         })
     except Patient.DoesNotExist:
         return JsonResponse({'success': False, 'error': f'No patient record found for ID: PT-{extracted_id}'}, status=404)
-    
 
 #DELETE PATIENT REC
 @csrf_exempt
@@ -127,6 +129,41 @@ def delete_patient_api(request):
             
         except Patient.DoesNotExist:
             return JsonResponse({'success': False, 'error': 'Record not found in the database.'}, status=404)
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+            
+    return JsonResponse({'error': 'Invalid request method'}, status=405)
+
+@csrf_exempt
+def save_patient_heart_rate(request):
+    """
+    Updates an existing patient's record with their calculated Heart Rate (BPM).
+    """
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            raw_id = data.get('patient_id', '')
+            live_hr = float(data.get('heart_rate', 81.0))
+            
+            # Reusing your clean regex logic to extract the absolute integer ID
+            numeric_match = re.search(r'\d+', str(raw_id))
+            if not numeric_match:
+                return JsonResponse({'success': False, 'error': 'Invalid Patient ID format.'}, status=400)
+                
+            extracted_id = int(numeric_match.group())
+            
+            # Look up the registered profile row, modify just the heart rate cell, and save
+            patient = Patient.objects.get(id=extracted_id)
+            patient.heart_rate = live_hr
+            patient.save()
+            
+            return JsonResponse({
+                'success': True, 
+                'message': f"Heart rate of {live_hr} BPM updated successfully for PT-{extracted_id}!"
+            })
+            
+        except Patient.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Patient record profile not found.'}, status=404)
         except Exception as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
             

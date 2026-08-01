@@ -86,11 +86,18 @@ window.onload = function () {
           // =======================================================
           // 🚀 DATA ARRIVAL: UPDATE UI AND FEED DUAL CANVAS ARRAYS 
           // =======================================================
-          if (data.type === "sensor_stream") {
+          // FIXED: Accept both 'sensor_stream' and 'send_sensor_data' to match backend
+          if (data.type === "sensor_stream" || data.type === "send_sensor_data") {
             if (connectBtn && !connectBtn.classList.contains("status-connected")) {
               clearTimeout(handshakeTimeout);
               connectBtn.className = "connect-btn status-connected";
               updateBtnText("ESP32 Connected");
+            }
+
+            // Hide the calibrating warning indicator once data begins flowing
+            const bufferIndicator = document.getElementById("ppg-buffer-indicator");
+            if (bufferIndicator) {
+              bufferIndicator.style.display = "none";
             }
 
             // 1. Output heart rate telemetry

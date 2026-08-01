@@ -1,5 +1,6 @@
 import os
 import collections
+import json
 import paho.mqtt.client as mqtt
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
@@ -7,7 +8,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 from .peak import PPGProcessor  # Import the processor framework
 
 # --- Block 1: Local Hotspot MQTT Configuration ---
-BROKER = "192.168.43.157"  # Adjusted to localhost (or use your active laptop IP)
+BROKER = "192.168.43.252"  # Adjusted to localhost (or use your active laptop IP)
 PORT = 1883
 TOPIC = "sensor/vascular"
 CONTROL_TOPIC = "sensor/control"  # Dedicated topic for START/STOP actions
@@ -18,6 +19,7 @@ MQTT_TOPIC = TOPIC
 
 # Instantiate processing buffers (5 seconds at 100Hz frequency window = 500 element capacity)
 DATA_BUFFER = collections.deque(maxlen=500)
+TIME_BUFFER = collections.deque(maxlen=500) # [NEW] Added parallel buffer for ESP32 timestamps
 processor = PPGProcessor(fs=100)
 
 # --- Block 2: Log Controller ---
@@ -66,30 +68,72 @@ def on_message(client, userdata, msg):
                 {"type": "broadcast_handshake_success"}
             )
             
-        elif "," in payload_text:
+        elif payload_text.startswith("["):
             try:
-                red_val, ir_val = payload_text.split(",")
-                raw_ir = float(ir_val.strip())
+                # Parse the JSON packet from ESP32
+                data_batch = json.loads(payload_text)
                 
-                # Append raw input coordinate directly into sliding window calculation array
-                DATA_BUFFER.append(raw_ir)
+                for item in data_batch:
+                    raw_ir = float(item["i"])
+                    timestamp_us = float(item["t"]) # Extract exact hardware microsecond timestamp
+                    
+                    DATA_BUFFER.append(raw_ir)
+                    TIME_BUFFER.append(timestamp_us)
                 
                 # Run complete analytical pipeline once structural minimum elements are met
                 if len(DATA_BUFFER) >= 200:
                     results = processor.preprocess_signal(list(DATA_BUFFER))
                     
+                    peaks = results["systolic_peaks"]
+                    bpm = float(results.get("bpm", 0))
+
+                    # [NEW] Debug check to ensure peak indices align exactly with TIME_BUFFER indices
+                    display_len = len(results["display"])
+                    buffer_len = len(DATA_BUFFER)
+                    if display_len != buffer_len:
+                        print(f"⚠️ WARNING: Array length mismatch! Display length ({display_len}) != Buffer length ({buffer_len}). Peak indices may not align correctly with TIME_BUFFER.")
+
+                    # [NEW] Recalculate true BPM using exact time gaps between hardware peaks
+                    if len(peaks) >= 2:
+                        import statistics
+                        # Extract the exact microsecond timestamp for each mapped peak index
+                        peak_times = [TIME_BUFFER[idx] for idx in peaks if idx < len(TIME_BUFFER)]
+                        
+                        if len(peak_times) >= 2:
+                            # Calculate time diff (RR intervals) between consecutive beats in microseconds
+                            rr_intervals = [peak_times[i] - peak_times[i-1] for i in range(1, len(peak_times))]
+                            
+                            # First pass: Medical absolute bounds filter (40-220 BPM)
+                            valid_rr = [rr for rr in rr_intervals if 272000 <= rr <= 1500000]
+                            
+                            if valid_rr:
+                                # First pass median
+                                initial_median = statistics.median(valid_rr)
+                                
+                                # Second pass: Relative consistency filter (discard false gaps / missed beats > 1.5x the median gap)
+                                clean_rr = [rr for rr in valid_rr if rr <= (1.5 * initial_median)]
+                                
+                                if len(clean_rr) >= 2:
+                                    # Calculate final reliable medical BPM
+                                    final_median_rr_us = statistics.median(clean_rr)
+                                    bpm = 60000000.0 / final_median_rr_us 
+                                else:
+                                    # If fewer than 2 clean intervals remain, our data is too noisy; fallback to default processor BPM
+                                    print("⚠️ Not enough clean RR intervals, falling back to basic processing BPM.")
+                                    # bpm remains the fallback `float(results.get("bpm", 0))` we assigned at the top
+
                     # Package and transmit calculated data sets to the active consumer group
                     async_to_sync(channel_layer.group_send)(
                         "sensor_data",
                         {
-                            "type": "send_sensor_data", # Maps to send_sensor_data() in consumer
-                            "display": results["display"].tolist(),
-                            "systolic_peaks": results["systolic_peaks"].tolist(),
-                            "bpm": float(results["bpm"])
+                            "type": "send_sensor_data", 
+                            "display": results["display"].tolist() if hasattr(results["display"], 'tolist') else list(results["display"]),
+                            "systolic_peaks": peaks.tolist() if hasattr(peaks, 'tolist') else list(peaks),
+                            "bpm": round(bpm, 1) # Display to 1 decimal point for clinical accuracy
                         }
                     )
-            except ValueError:
-                print(f"⚠️ Received poorly formatted data: {payload_text}")
+            except (json.JSONDecodeError, ValueError, KeyError) as e:
+                print(f"⚠️ Data parsing error: {e}")
             
     except Exception as e:
         print(f"🔴 Background message processing failure: {e}")
@@ -120,5 +164,5 @@ def send_command_to_esp(command_string):
 client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, transport="tcp")
 mqtt_client = client
 
-client.on_connect = on_connect
+client.on_connect = on_connect 
 client.on_message = on_message

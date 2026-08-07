@@ -1,9 +1,10 @@
 from django.db import connection
 import re
+from django.utils import timezone
 from django.shortcuts import render
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .models import Patient
+from .models import Patient, PatientFollowUp
 import json
 
 
@@ -47,15 +48,26 @@ def save_patient(request):
     if request.method == "POST":
         try:
             data = json.loads(request.body)
+            age = int(str(data.get('age', '')).strip())
+            height = float(str(data.get('height', '')).strip())
+
+            if age < 0:
+                return JsonResponse({'success': False, 'error': 'Age cannot be negative.'}, status=400)
+
+            if height < 0:
+                return JsonResponse({'success': False, 'error': 'Height cannot be negative.'}, status=400)
+
             patient = Patient.objects.create(
                 name=data.get('name'),
-                age=int(data.get('age')),
+                phone_no=data.get('phone_no'),
+                age=age,
                 gender=data.get('gender'),
-                height=float(data.get('height'))
+                height=height
             )
             return JsonResponse({
                 'success': True, 
                 'patient_id': patient.id,
+                'registered_at': timezone.localtime(patient.created_at).strftime('%Y-%m-%d') if patient.created_at else '--',
                 'message': f"Patient {patient.id} registered successfully!"
             })
         except Exception as e:
@@ -83,17 +95,49 @@ def search_patient_api(request):
 
     try:
         patient = Patient.objects.get(id=extracted_id)
+        followups = patient.followups.order_by('-created_at')
+
+        def _fmt_num(value, digits=2):
+            if value is None:
+                return '--'
+            return round(float(value), digits)
+
+        followup_rows = [
+            {
+                'id': row.id,
+                'date': timezone.localtime(row.created_at).strftime('%Y-%m-%d %H:%M') if row.created_at else '--',
+                'hr': _fmt_num(row.heart_rate, 1),
+                'si': _fmt_num(row.si, 2),
+                'cvd_risk': row.cvd_risk or '--',
+                'cvd_age': _fmt_num(row.cvd_age, 1),
+                'pwv': _fmt_num(row.pwv, 2),
+                'ct': _fmt_num(row.ct, 2),
+                'ri': _fmt_num(row.ri, 3),
+                'dpdt_max': _fmt_num(row.dpdt_max, 3),
+                'agi_mod': _fmt_num(row.agi_mod, 3),
+                'lvet': _fmt_num(row.lvet, 2),
+                'ppg_sevr': _fmt_num(row.ppg_sevr, 3),
+                'ppg_asys': _fmt_num(row.ppg_asys, 3),
+                'ppg_adia': _fmt_num(row.ppg_adia, 3),
+                'pat': _fmt_num(row.pat, 2),
+            }
+            for row in followups
+        ]
+
         return JsonResponse({
             'success': True,
             'data': {
                 'id': f"PT-{patient.id}",
                 'name': patient.name,
+                'phone_no': patient.phone_no,
                 'age': patient.age,
                 'gender': patient.gender.capitalize(),
                 'height': patient.height,
+                'registered_at': timezone.localtime(patient.created_at).strftime('%Y-%m-%d') if patient.created_at else '--',
                 
                 # --- THIS IS THE NEW LINE WE ADDED BESIDE THE REST ---
-                'heart_rate': patient.heart_rate if patient.heart_rate else '--'
+                'heart_rate': patient.heart_rate if patient.heart_rate else '--',
+                'followups': followup_rows
             }
         })
     except Patient.DoesNotExist:
@@ -143,7 +187,8 @@ def save_patient_heart_rate(request):
         try:
             data = json.loads(request.body)
             raw_id = data.get('patient_id', '')
-            live_hr = float(data.get('heart_rate', 81.0))
+            requested_hr = data.get('heart_rate')
+            features_payload = data.get('features') if isinstance(data.get('features'), dict) else {}
             
             # Reusing your clean regex logic to extract the absolute integer ID
             numeric_match = re.search(r'\d+', str(raw_id))
@@ -151,15 +196,57 @@ def save_patient_heart_rate(request):
                 return JsonResponse({'success': False, 'error': 'Invalid Patient ID format.'}, status=400)
                 
             extracted_id = int(numeric_match.group())
+
+            live_hr = None
+            try:
+                if requested_hr is not None:
+                    parsed_hr = float(requested_hr)
+                    if parsed_hr > 0:
+                        live_hr = parsed_hr
+            except (TypeError, ValueError):
+                live_hr = None
+
+            if live_hr is None:
+                from .mqtt_worker import get_latest_bpm
+                live_hr = get_latest_bpm()
+
+            if live_hr is None or live_hr <= 0:
+                return JsonResponse(
+                    {
+                        'success': False,
+                        'error': 'No valid live heart rate is available yet. Start capture and wait for stable BPM.'
+                    },
+                    status=400
+                )
             
             # Look up the registered profile row, modify just the heart rate cell, and save
             patient = Patient.objects.get(id=extracted_id)
-            patient.heart_rate = live_hr
+            patient.heart_rate = round(float(live_hr), 1)
             patient.save()
+
+            followup = PatientFollowUp.objects.create(
+                patient=patient,
+                heart_rate=patient.heart_rate,
+                si=features_payload.get('si'),
+                cvd_risk=features_payload.get('cvd_risk'),
+                cvd_age=features_payload.get('cvd_age'),
+                pwv=features_payload.get('pwv'),
+                ct=features_payload.get('ct'),
+                ri=features_payload.get('ri'),
+                dpdt_max=features_payload.get('dpdt_max'),
+                agi_mod=features_payload.get('agi_mod'),
+                lvet=features_payload.get('lvet'),
+                ppg_sevr=features_payload.get('ppg_sevr'),
+                ppg_asys=features_payload.get('ppg_asys'),
+                ppg_adia=features_payload.get('ppg_adia'),
+                pat=features_payload.get('pat'),
+            )
             
             return JsonResponse({
                 'success': True, 
-                'message': f"Heart rate of {live_hr} BPM updated successfully for PT-{extracted_id}!"
+                'saved_heart_rate': patient.heart_rate,
+                'followup_id': followup.id,
+                'message': f"Heart rate of {patient.heart_rate} BPM updated successfully for PT-{extracted_id}!"
             })
             
         except Patient.DoesNotExist:

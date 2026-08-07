@@ -8,12 +8,111 @@ let handshakeTimeout = null;
 let displaySignalArray = [];     // PPG Data
 let systolicPeakIndices = [];    // PPG Peaks
 let pcgSignalArray = [];         // PCG Data (Sound)
+let latestLiveBpm = null;        // Latest valid BPM computed in backend MQTT pipeline
+let currentPatientData = null;   // Last searched patient payload for report rendering
+let detailsTabUnlocked = false;  // Controls visibility of Details navbar item
 
 // Canvas Engine References
 let ppgCanvas = null;
 let ppgCtx = null;
 let pcgCanvas = null;
 let pcgCtx = null;
+
+function switchMainNavPage(pageName) {
+  const dashboardWrapper = document.getElementById("dashboard-wrapper");
+  const homeSection = document.getElementById("home-dashboard-section");
+  const patientDataPage = document.getElementById("patient-data-page");
+  const homeNavBtn = document.getElementById("nav-home");
+  const patientNavBtn = document.getElementById("nav-patient-data");
+  const detailsNavBtn = document.getElementById("nav-details");
+
+  const showDetails = pageName === "details";
+  const showSearchPanel = pageName === "patient-search";
+
+  if (detailsNavBtn) {
+    detailsNavBtn.classList.toggle("hidden", !detailsTabUnlocked);
+  }
+
+  if (dashboardWrapper) {
+    dashboardWrapper.classList.toggle("show-patient-panel", showSearchPanel);
+  }
+  if (homeSection) homeSection.classList.toggle("hidden", showDetails);
+  if (patientDataPage) patientDataPage.classList.toggle("hidden", !showDetails);
+  if (homeNavBtn) homeNavBtn.classList.toggle("active", pageName === "home");
+  if (patientNavBtn) patientNavBtn.classList.toggle("active", pageName === "patient-search");
+  if (detailsNavBtn) detailsNavBtn.classList.toggle("active", showDetails);
+}
+
+function renderPatientHistoryTable(patient) {
+  const historyTableBody = document.getElementById("table-history-body");
+  if (!historyTableBody) return;
+
+  const followups = Array.isArray(patient?.followups) ? patient.followups : [];
+  const latest = followups.length > 0 ? followups[0] : null;
+
+  const bpmDisplay = latest && latest.hr !== "--" ? `${latest.hr} BPM` : (patient?.heart_rate ? `${patient.heart_rate} BPM` : "-- BPM");
+  const cardioRisk = latest?.cvd_risk || "--";
+  const bloodPressure = "--";
+
+  historyTableBody.innerHTML = `
+    <tr>
+      <td><strong>${patient.id || "--"}</strong></td>
+      <td style="color: #0284c7; font-weight: bold;">${bpmDisplay}</td>
+      <td><span class="badge" style="background: #f1f5f9; color: #64748b; padding: 4px 8px; border-radius: 4px;">${cardioRisk}</span></td>
+      <td>${bloodPressure}</td>
+    </tr>
+  `;
+}
+
+function renderPatientDataReport(patient) {
+  const idEl = document.getElementById("report-id");
+  const nameEl = document.getElementById("report-name");
+  const phoneEl = document.getElementById("report-phone");
+  const ageEl = document.getElementById("report-age");
+  const heightEl = document.getElementById("report-height");
+  const registeredEl = document.getElementById("report-registered");
+  const featureBody = document.getElementById("table-feature-body");
+
+  if (idEl) idEl.innerText = patient?.id || "--";
+  if (nameEl) nameEl.innerText = patient?.name || "--";
+  if (phoneEl) phoneEl.innerText = patient?.phone_no || "--";
+  if (ageEl) ageEl.innerText = patient?.age ?? "--";
+  if (heightEl) heightEl.innerText = patient?.height ? `${patient.height} cm` : "--";
+  if (registeredEl) registeredEl.innerText = patient?.registered_at || "--";
+
+  if (!featureBody) return;
+  const rows = Array.isArray(patient?.followups) ? patient.followups : [];
+  if (!rows.length) {
+    featureBody.innerHTML = `
+      <tr>
+        <td colspan="15" style="text-align: center; color: #64748b; font-style: italic;">
+          No follow-up records yet. Save a session to add the first feature row.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  featureBody.innerHTML = rows.map((row) => `
+    <tr>
+      <td>${row.date || "--"}</td>
+      <td class="feature-main">${row.hr ?? "--"}</td>
+      <td class="feature-main">${row.si ?? "--"}</td>
+      <td class="feature-main">${row.cvd_risk ?? "--"}</td>
+      <td class="feature-main">${row.cvd_age ?? "--"}</td>
+      <td class="feature-main">${row.pwv ?? "--"}</td>
+      <td>${row.ct ?? "--"}</td>
+      <td>${row.ri ?? "--"}</td>
+      <td>${row.dpdt_max ?? "--"}</td>
+      <td>${row.agi_mod ?? "--"}</td>
+      <td>${row.lvet ?? "--"}</td>
+      <td>${row.ppg_sevr ?? "--"}</td>
+      <td>${row.ppg_asys ?? "--"}</td>
+      <td>${row.ppg_adia ?? "--"}</td>
+      <td>${row.pat ?? "--"}</td>
+    </tr>
+  `).join("");
+}
 
 // ==========================================
 // Main Execution Engine - Defensively Guarded
@@ -28,27 +127,67 @@ window.onload = function () {
     try {
       const homeNavBtn = document.getElementById("nav-home");
       const patientNavBtn = document.getElementById("nav-patient-data");
-      const dashboardWrapper = document.getElementById("dashboard-wrapper");
+      const detailsNavBtn = document.getElementById("nav-details");
 
-      if (patientNavBtn && dashboardWrapper) {
+      switchMainNavPage("home");
+
+      if (patientNavBtn) {
         patientNavBtn.onclick = function (e) {
           e.preventDefault();
-          dashboardWrapper.classList.add("show-patient-panel");
-          if (homeNavBtn) homeNavBtn.classList.remove("active");
-          patientNavBtn.classList.add("active");
+          switchMainNavPage("patient-search");
         };
       }
 
-      if (homeNavBtn && dashboardWrapper) {
+      if (detailsNavBtn) {
+        detailsNavBtn.onclick = function (e) {
+          e.preventDefault();
+          if (!detailsTabUnlocked || !currentPatientData) {
+            alert("Search a patient and click Show Patient Data to open Details.");
+            return;
+          }
+          renderPatientDataReport(currentPatientData);
+          switchMainNavPage("details");
+        };
+      }
+
+      if (homeNavBtn) {
         homeNavBtn.onclick = function (e) {
           e.preventDefault();
-          dashboardWrapper.classList.remove("show-patient-panel");
-          if (patientNavBtn) patientNavBtn.classList.remove("active");
-          homeNavBtn.classList.add("active");
+          switchMainNavPage("home");
         };
       }
     } catch (err) {
       console.error("Navbar Error:", err);
+    }
+  })();
+
+  (function initPatientDataNavigation() {
+    try {
+      const showDataBtn = document.getElementById("btn-show-patient-data");
+      const exitDetailsBtn = document.getElementById("btn-exit-details");
+
+      if (showDataBtn) {
+        showDataBtn.onclick = function () {
+          if (!currentPatientData) {
+            alert("Search a patient first, then click Show Patient Data.");
+            return;
+          }
+          detailsTabUnlocked = true;
+          renderPatientDataReport(currentPatientData);
+          switchMainNavPage("details");
+        };
+      }
+
+      if (exitDetailsBtn) {
+        exitDetailsBtn.onclick = function () {
+          detailsTabUnlocked = false;
+          switchMainNavPage("home");
+          const patientDataPage = document.getElementById("patient-data-page");
+          if (patientDataPage) patientDataPage.classList.add("hidden");
+        };
+      }
+    } catch (err) {
+      console.error("Patient data page init error:", err);
     }
   })();
 
@@ -105,6 +244,9 @@ window.onload = function () {
             const bpmText = document.getElementById("hr-val");
             if (bpmText) {
               bpmText.innerText = currentBpm > 0 ? Math.round(currentBpm) : "--";
+            }
+            if (Number.isFinite(Number(currentBpm)) && Number(currentBpm) > 0) {
+              latestLiveBpm = Number(currentBpm);
             }
 
             // 2. Cache signal vectors for rendering
@@ -175,11 +317,27 @@ window.onload = function () {
         patientForm.onsubmit = async function (e) {
           e.preventDefault();
           try {
+            const ageText = document.getElementById("p-age")?.value?.trim() || "";
+            const heightText = document.getElementById("p-height")?.value?.trim() || "";
+            const parsedAge = Number(ageText);
+            const parsedHeight = Number(heightText);
+
+            if (!Number.isFinite(parsedAge) || parsedAge < 0 || !Number.isInteger(parsedAge)) {
+              alert("Age must be a non-negative whole number.");
+              return;
+            }
+
+            if (!Number.isFinite(parsedHeight) || parsedHeight < 0) {
+              alert("Height must be a non-negative number.");
+              return;
+            }
+
             const patientPayload = {
               name: document.getElementById("p-name")?.value || "",
-              age: document.getElementById("p-age")?.value || "",
+              phone_no: document.getElementById("p-phone")?.value || "",
+              age: parsedAge,
               gender: document.getElementById("p-gender")?.value || "",
-              height: document.getElementById("p-height")?.value || "",
+              height: parsedHeight,
             };
 
             const response = await fetch("/api/save-patient/", {
@@ -190,7 +348,7 @@ window.onload = function () {
             const result = await response.json();
 
             if (result.success) {
-              ["p-name", "p-age", "p-gender", "p-height"].forEach((id) => {
+              ["p-name", "p-phone", "p-age", "p-gender", "p-height"].forEach((id) => {
                 const el = document.getElementById(id);
                 if (el) el.disabled = true;
               });
@@ -221,7 +379,6 @@ window.onload = function () {
       const searchBtn = document.getElementById("btn-search-submit");
       const searchInput = document.getElementById("txt-search-id");
       const profileCard = document.getElementById("patient-profile-card");
-      const historyTableBody = document.getElementById("table-history-body");
 
       if (searchBtn && searchInput) {
         searchBtn.onclick = async function () {
@@ -236,14 +393,17 @@ window.onload = function () {
 
             if (result.success && profileCard) {
               const patient = result.data;
+              currentPatientData = patient;
               const valId = document.getElementById("val-id");
               const valName = document.getElementById("val-name");
+              const valPhone = document.getElementById("val-phone");
               const valAgeSex = document.getElementById("val-age-sex");
               const valHeight = document.getElementById("val-height");
               const valHeartRate = document.getElementById("val-heart-rate");
 
               if (valId) valId.innerText = patient.id;
               if (valName) valName.innerText = patient.name;
+              if (valPhone) valPhone.innerText = patient.phone_no || "--";
               if (valAgeSex) valAgeSex.innerText = `${patient.age} / ${patient.gender}`;
               if (valHeight) valHeight.innerText = patient.height;
               
@@ -253,23 +413,7 @@ window.onload = function () {
               }
 
               profileCard.style.display = "block";
-
-              // FIXED: Rewrites table payload rows dynamically following the design request headers
-             // FIXED: Removed random fallbacks and forced '--' for uncalculated fields
-            if (historyTableBody) {
-              const bpmDisplay = patient.heart_rate ? `${patient.heart_rate} BPM` : '-- BPM';
-              const cardioRisk = '--'; // Forced empty flag until calculated
-              const bloodPressure = '--'; // Forced empty flag until calculated
-
-              historyTableBody.innerHTML = `
-                <tr>
-                  <td><strong>${patient.id}</strong></td>
-                  <td style="color: #0284c7; font-weight: bold;">${bpmDisplay}</td>
-                  <td><span class="badge" style="background: #f1f5f9; color: #64748b; padding: 4px 8px; border-radius: 4px;">${cardioRisk}</span></td>
-                  <td>${bloodPressure}</td>
-                </tr>
-              `;
-            }
+              renderPatientHistoryTable(patient);
             }
           } catch (err) {
             console.error("Search Payload Error:", err);
@@ -296,6 +440,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const deleteBtn = document.getElementById("btn-delete-profile");
   const profileCard = document.getElementById("patient-profile-card");
   const historyTableBody = document.getElementById("table-history-body");
+  const featureBody = document.getElementById("table-feature-body");
   const searchInput = document.getElementById("txt-search-id");
 
   if (deleteBtn) {
@@ -320,8 +465,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (result.success) {
           alert(`Deleted successfully: ${result.message}`);
+          currentPatientData = null;
+          detailsTabUnlocked = false;
           profileCard.style.display = "none";
           searchInput.value = "";
+          switchMainNavPage("patient-search");
           if (historyTableBody) {
              historyTableBody.innerHTML = `
                 <tr>
@@ -329,6 +477,15 @@ document.addEventListener("DOMContentLoaded", () => {
                         Search for a patient profile above to display diagnostic logs.
                     </td>
                 </tr>
+            `;
+          }
+          if (featureBody) {
+            featureBody.innerHTML = `
+              <tr>
+                <td colspan="15" style="text-align: center; color: #64748b; font-style: italic;">
+                  Click Show Patient Data to load the patient report.
+                </td>
+              </tr>
             `;
           }
 
@@ -355,6 +512,7 @@ document.addEventListener("DOMContentLoaded", () => {
     followupBtn.addEventListener("click", () => {
       const patientIdText = document.getElementById("val-id").innerText.trim();
       const name = document.getElementById("val-name").innerText.trim();
+      const phone = document.getElementById("val-phone")?.innerText.trim() || "";
       const ageSexText = document.getElementById("val-age-sex").innerText.trim(); 
       const heightText = document.getElementById("val-height").innerText.trim(); 
 
@@ -371,6 +529,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const inputName =
         document.getElementById("txt-name") ||
         document.querySelector('input[placeholder="Your Name Here"]');
+
+      const inputPhone =
+        document.getElementById("p-phone") ||
+        document.querySelector('input[placeholder="Enter phone number"]');
 
       const inputAge =
         document.getElementById("num-age") ||
@@ -405,6 +567,10 @@ document.addEventListener("DOMContentLoaded", () => {
       if (inputName) {
         inputName.value = name;
         inputName.disabled = true;
+      }
+      if (inputPhone) {
+        inputPhone.value = phone;
+        inputPhone.disabled = true;
       }
       if (inputAge) {
         inputAge.value = age;
@@ -674,11 +840,21 @@ document.addEventListener("DOMContentLoaded", () => {
   const saveBtn = document.getElementById("save-btn");
   if (saveBtn) {
     saveBtn.addEventListener("click", () => {
-        const patientId = document.getElementById("val-id")?.textContent || "PT-14";
-        
-        // FIXED: Dynamically matches the exact text element updated by the telemetry metrics card ('hr-val')
-        const liveHeartRateText = document.getElementById("hr-val")?.textContent || "81";
-        const liveHeartRate = parseFloat(liveHeartRateText) || 81.0;
+        const patientId =
+          document.getElementById("val-id")?.textContent?.trim() ||
+          document.getElementById("p-id")?.value?.trim() ||
+          "";
+
+        if (!/\d+/.test(patientId)) {
+          alert("Select or register a valid patient before saving heart rate.");
+          return;
+        }
+
+        const liveHeartRate = Number(latestLiveBpm);
+        if (!Number.isFinite(liveHeartRate) || liveHeartRate <= 0) {
+          alert("No valid live heart rate available yet. Start capture and wait for BPM.");
+          return;
+        }
 
         console.log(`💾 Posting Heart Rate Update (${liveHeartRate} BPM) for row target: ${patientId}`);
 
@@ -697,6 +873,10 @@ document.addEventListener("DOMContentLoaded", () => {
         .then(data => {
             if (data.success) {
                 alert(`✅ Saved Successfully!\n${data.message}`);
+                const savedHrEl = document.getElementById("val-heart-rate");
+                if (savedHrEl && Number.isFinite(Number(data.saved_heart_rate))) {
+                  savedHrEl.innerText = String(data.saved_heart_rate);
+                }
                 // Optional refresh trigger: updates historical tables instantly following a successful save
                 const searchBtn = document.getElementById("btn-search-submit");
                 if (searchBtn) searchBtn.click();

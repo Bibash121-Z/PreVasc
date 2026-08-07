@@ -6,6 +6,29 @@
     width: 100%;
 }
 
+.patient-section-tabs {
+    display: inline-flex;
+    gap: 0.5rem;
+}
+
+.patient-tab {
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #334155;
+    border-radius: 999px;
+    padding: 0.45rem 0.95rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.patient-tab.active {
+    background: #0f766e;
+    color: #ffffff;
+    border-color: #0f766e;
+}
+
 .search-input-group {
     display: flex;
     gap: 0.5rem;
@@ -66,6 +89,77 @@
 
 .history-data-table tbody tr:hover {
     background-color: #f8fafc;
+}
+
+.history-actions-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.75rem;
+}
+
+.history-show-btn {
+    width: auto;
+    padding: 0.55rem 1rem;
+    font-size: 0.85rem;
+}
+
+.patient-report-card {
+    overflow: hidden;
+}
+
+.report-summary-strip {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(120px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.summary-cell {
+    border: 1px solid #dbe7ef;
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 0.65rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.summary-label {
+    color: #64748b;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 800;
+}
+
+.patient-report-card .summary-cell .summary-label {
+    font-weight: 900 !important;
+    color: #334155 !important;
+}
+
+.summary-value {
+    color: #1e293b;
+    font-size: 0.98rem;
+    font-weight: 700;
+}
+
+.report-table-wrap {
+    overflow-x: auto;
+}
+
+.report-feature-table th,
+.report-feature-table td {
+    white-space: nowrap;
+}
+
+.report-feature-table .highlight-col {
+    color: #166534;
+    background: #ecfdf5;
+}
+
+.report-feature-table td.feature-main {
+    color: #166534;
+    font-weight: 700;
 }
 
 /* Utility layout visibility modifiers */
@@ -150,4 +244,10 @@
 
 .btn-delete-small:active {
     transform: scale(0.97) !important;
+}
+
+@media (max-width: 980px) {
+    .report-summary-strip {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
+    }
 }

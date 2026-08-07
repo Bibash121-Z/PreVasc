@@ -1,11 +1,13 @@
 import os
 import collections
 import json
+import math
 import paho.mqtt.client as mqtt
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from paho.mqtt.enums import CallbackAPIVersion
 from .peak import PPGProcessor  # Import the processor framework
+from .features import extract_heart_rate_from_peaks
 
 # --- Block 1: Local Hotspot MQTT Configuration ---
 BROKER = "192.168.43.252"  # Adjusted to localhost (or use your active laptop IP)
@@ -21,6 +23,14 @@ MQTT_TOPIC = TOPIC
 DATA_BUFFER = collections.deque(maxlen=500)
 TIME_BUFFER = collections.deque(maxlen=500) # [NEW] Added parallel buffer for ESP32 timestamps
 processor = PPGProcessor(fs=100)
+LAST_VALID_BPM = None
+
+
+def get_latest_bpm():
+    """
+    Returns the most recent valid BPM computed from incoming MQTT sensor frames.
+    """
+    return LAST_VALID_BPM
 
 # --- Block 2: Log Controller ---
 LOCK_FILE = os.path.join(os.path.dirname(__file__), ".mqtt_printed.lock")
@@ -46,6 +56,7 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
 # --- Block 4: Handshake & Data Receiver (CONNECTED TO SCIPY PROCESSING CORE) ---
 def on_message(client, userdata, msg):
     try:
+        global LAST_VALID_BPM
         payload = msg.payload
         channel_layer = get_channel_layer()
 
@@ -94,33 +105,10 @@ def on_message(client, userdata, msg):
                         print(f"⚠️ WARNING: Array length mismatch! Display length ({display_len}) != Buffer length ({buffer_len}). Peak indices may not align correctly with TIME_BUFFER.")
 
                     # [NEW] Recalculate true BPM using exact time gaps between hardware peaks
-                    if len(peaks) >= 2:
-                        import statistics
-                        # Extract the exact microsecond timestamp for each mapped peak index
-                        peak_times = [TIME_BUFFER[idx] for idx in peaks if idx < len(TIME_BUFFER)]
-                        
-                        if len(peak_times) >= 2:
-                            # Calculate time diff (RR intervals) between consecutive beats in microseconds
-                            rr_intervals = [peak_times[i] - peak_times[i-1] for i in range(1, len(peak_times))]
-                            
-                            # First pass: Medical absolute bounds filter (40-220 BPM)
-                            valid_rr = [rr for rr in rr_intervals if 272000 <= rr <= 1500000]
-                            
-                            if valid_rr:
-                                # First pass median
-                                initial_median = statistics.median(valid_rr)
-                                
-                                # Second pass: Relative consistency filter (discard false gaps / missed beats > 1.5x the median gap)
-                                clean_rr = [rr for rr in valid_rr if rr <= (1.5 * initial_median)]
-                                
-                                if len(clean_rr) >= 2:
-                                    # Calculate final reliable medical BPM
-                                    final_median_rr_us = statistics.median(clean_rr)
-                                    bpm = 60000000.0 / final_median_rr_us 
-                                else:
-                                    # If fewer than 2 clean intervals remain, our data is too noisy; fallback to default processor BPM
-                                    print("⚠️ Not enough clean RR intervals, falling back to basic processing BPM.")
-                                    # bpm remains the fallback `float(results.get("bpm", 0))` we assigned at the top
+                    bpm = extract_heart_rate_from_peaks(peaks, TIME_BUFFER, bpm)
+
+                    if isinstance(bpm, (int, float)) and math.isfinite(bpm) and bpm > 0:
+                        LAST_VALID_BPM = float(bpm)
 
                     # Package and transmit calculated data sets to the active consumer group
                     async_to_sync(channel_layer.group_send)(

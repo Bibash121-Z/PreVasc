@@ -19,6 +19,7 @@
         <div class="nav-links">
             <a href="#" id="nav-home" class="nav-item active">Home</a>
             <a href="#" id="nav-patient-data" class="nav-item">Patient Data</a>
+            <a href="#" id="nav-details" class="nav-item hidden">Details</a>
         </div>
         <!-- Dynamic hardware pairing button -->
         <button id="hardware-connect-btn" class="connect-btn status-disconnected">
@@ -36,8 +37,73 @@
         
         <!-- RIGHT PANEL: Your Active Real-Time Workstation (Form inputs, Metrics) -->
         <section class="workspace-panel-right">
-            
-            <div class="dashboard-grid">
+            <div id="patient-data-page" class="hidden">
+                <div class="card patient-report-card">
+                    <div class="profile-card-header">
+                        <h3 class="card-title-inline">Patient Data Report</h3>
+                        <button type="button" id="btn-exit-details" class="btn-delete-small">Exit</button>
+                    </div>
+                    <div class="report-summary-strip">
+                        <div class="summary-cell">
+                            <strong class="summary-label">Patient ID:</strong>
+                            <span id="report-id" class="summary-value">--</span>
+                        </div>
+                        <div class="summary-cell">
+                            <strong class="summary-label">Name:</strong>
+                            <span id="report-name" class="summary-value">--</span>
+                        </div>
+                        <div class="summary-cell">
+                            <strong class="summary-label">Age:</strong>
+                            <span id="report-age" class="summary-value">--</span>
+                        </div>
+                        <div class="summary-cell">
+                            <strong class="summary-label">Height:</strong>
+                            <span id="report-height" class="summary-value">--</span>
+                        </div>
+                        <div class="summary-cell">
+                            <strong class="summary-label">Registered On:</strong>
+                            <span id="report-registered" class="summary-value">--</span>
+                        </div>
+                        <div class="summary-cell">
+                            <strong class="summary-label">Phone No:</strong>
+                            <span id="report-phone" class="summary-value">--</span>
+                        </div>
+                    </div>
+
+                    <div class="report-table-wrap">
+                        <table class="history-data-table report-feature-table">
+                            <thead>
+                                <tr>
+                                    <th>Follow-Up Date</th>
+                                    <th class="highlight-col">HR</th>
+                                    <th class="highlight-col">SI</th>
+                                    <th class="highlight-col">CVD RISK</th>
+                                    <th class="highlight-col">CVD AGE</th>
+                                    <th class="highlight-col">PWV</th>
+                                    <th>CT</th>
+                                    <th>RI</th>
+                                    <th>dpdt_max</th>
+                                    <th>AGI_mod</th>
+                                    <th>LVET</th>
+                                    <th>PPG_SEVR</th>
+                                    <th>PPG_Asys</th>
+                                    <th>PPG_Adia</th>
+                                    <th>PAT</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-feature-body">
+                                <tr>
+                                    <td colspan="15" style="text-align: center; color: #64748b; font-style: italic;">
+                                        Click Show Patient Data to load the patient report.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="home-dashboard-section" class="dashboard-grid">
                 
                 <!-- Block 1: Patient Registration (Current Active Session) -->
                 <section class="card patient-card">
@@ -51,10 +117,14 @@
                             <label for="p-name">Full Name:</label>
                             <input type="text" id="p-name" placeholder="Your Name Here" required>
                         </div>
+                        <div class="form-group">
+                            <label for="p-phone">Phone No:</label>
+                            <input type="text" id="p-phone" placeholder="Enter phone number" required>
+                        </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="p-age">Age (yrs):</label>
-                                <input type="number" id="p-age" placeholder="0" required>
+                                <input type="text" id="p-age" placeholder="0" inputmode="numeric" required>
                             </div>
                             <div class="form-group">
                                 <label for="p-gender">Gender:</label>
@@ -68,7 +138,7 @@
                         </div>
                         <div class="form-group">
                             <label for="p-height">Height (cm):</label>
-                            <input type="number" id="p-height" placeholder="000" required>
+                            <input type="text" id="p-height" placeholder="000" inputmode="decimal" required>
                         </div>
                         <button type="submit" class="action-btn btn-start" style="margin-top: 0.5rem;">Register Patient</button>
                     </form>

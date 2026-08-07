@@ -21,6 +21,7 @@
         <div class="profile-meta-grid">
             <p><strong>System ID:</strong> <span id="val-id"></span></p>
             <p><strong>Name:</strong> <span id="val-name"></span></p>
+            <p><strong>Phone No:</strong> <span id="val-phone"></span></p>
             <p><strong>Age / Sex:</strong> <span id="val-age-sex"></span></p>
             <p><strong>Height:</strong> <span id="val-height"></span> cm</p>
             
@@ -30,9 +31,12 @@
     </div>
 
     <!-- Component Block 3: Historical Session Logs -->
-    <!-- Component Block 3: Historical Session Logs -->
+
 <div class="card">
     <h3 class="card-title">Historical Log Diagnostics</h3>
+    <div class="history-actions-row">
+        <button type="button" id="btn-show-patient-data" class="action-btn btn-start history-show-btn">Show Patient Data</button>
+    </div>
     <div style="overflow-x: auto;">
         <table class="history-data-table">
             <thead>
@@ -53,5 +57,4 @@
         </table>
     </div>
 </div>
-    
 </div>

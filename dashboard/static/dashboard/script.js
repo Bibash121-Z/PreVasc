@@ -431,11 +431,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (statusBadge && data.clinical_status) {
             statusBadge.innerText = data.clinical_status;
             if (data.clinical_status.includes("DUAL")) {
-                statusBadge.style.backgroundColor = "#15803d"; // Green
+                statusBadge.style.backgroundColor = "#15803d"; // Green (Both sensors active)
             } else if (data.clinical_status.includes("PPG ACTIVE")) {
-                statusBadge.style.backgroundColor = "#0284c7"; // Blue
+                statusBadge.style.backgroundColor = "#0284c7"; // Blue (Finger pulse active)
             } else {
-                statusBadge.style.backgroundColor = "#f59e0b"; // Orange/Warning
+                statusBadge.style.backgroundColor = "#f59e0b"; // Orange (Attach sensor)
                 isNoise = true; 
             }
         }

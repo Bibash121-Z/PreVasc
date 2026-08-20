@@ -316,14 +316,27 @@ def on_message(client, userdata, msg):
                         if extracted:
                             ai_features = extracted
 
-                            # PWV Calculation
+                            # --- TRUE PTT-BASED PWV CALCULATION ---
+                            # PTT = PAT (total time to peak) - CT (crest rise time to peak)
                             distance_m = (0.43 * PATIENT_HEIGHT_M) - 0.05
-                            if is_valid_pcg and live_pat and live_pat > 0:
-                                ai_features["pwv"] = distance_m / (live_pat / 1000.0)
+                            ct_ms = ai_features.get("CT", 140.0)
+                            
+                            if is_valid_pcg and live_pat and live_pat > ct_ms:
+                                ptt_sec = (live_pat - ct_ms) / 1000.0
+                                
+                                # Physiological PTT bounds (40ms to 200ms)
+                                if 0.04 <= ptt_sec <= 0.22:
+                                    ai_features["pwv"] = distance_m / ptt_sec
+                                else:
+                                    # Fallback to Stiffness Index (SI) if PAT was temporarily noisy
+                                    si = ai_features.get("SI", 0)
+                                    ai_features["pwv"] = (distance_m / (PATIENT_HEIGHT_M / si)) if si > 0 else 0.0
                             else:
+                                # Fallback to Stiffness Index (SI) when PCG is disabled/noisy
                                 si = ai_features.get("SI", 0)
                                 ai_features["pwv"] = (distance_m / (PATIENT_HEIGHT_M / si)) if si > 0 else 0.0
 
+                            print("PWV: ", ai_features["pwv"])
                             # XGBoost Models
                             if xgb_models_loaded:
                                 X_new = pd.DataFrame([ai_features], columns=XGB_FEATURES)

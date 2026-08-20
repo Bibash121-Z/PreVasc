@@ -4,7 +4,7 @@
 # ==========================================================
 
 import numpy as np
-from scipy.signal import butter, iirnotch, sosfiltfilt, filtfilt, find_peaks
+from scipy.signal import butter, iirnotch, sosfiltfilt, filtfilt, find_peaks, hilbert, savgol_filter
 
 
 class PCGProcessor:
@@ -48,22 +48,19 @@ class PCGProcessor:
         notched = filtfilt(self.b100, self.a100, notched)
 
         filtered_full = sosfiltfilt(self.sos_bandpass, notched) * 10.0
-        rectified = np.abs(filtered_full)
-        
-        # Smooth with 6.0 Hz envelope
-        envelope_raw = sosfiltfilt(self.sos_envelope, rectified)
 
-        # --- SOFT BASELINE NOISE GATE (Squashes background ripple to clean zero) ---
-        max_env_raw = np.max(envelope_raw)
-        noise_floor = max_env_raw * 0.12  # 12% noise gate
-        envelope_gated = np.maximum(0.0, envelope_raw - noise_floor)
+        # --- HILBERT ANALYTIC ENVELOPE (Smooth Natural Peaks, No Square Table-Tops) ---
+        analytic_signal = hilbert(filtered_full)
+        envelope_raw = np.abs(analytic_signal)
+
+        # Smooth envelope with Savitzky-Golay (60ms window @ 500Hz)
+        wl = min(31, len(envelope_raw) - 1 if (len(envelope_raw) - 1) % 2 == 1 else len(envelope_raw) - 2)
+        envelope_full = savgol_filter(envelope_raw, window_length=wl, polyorder=2)
 
         # Scale for UI visibility [0 to 10]
-        max_gated = np.max(envelope_gated)
-        if max_gated > 1e-6:
-            envelope_full = (envelope_gated / max_gated) * 10.0
-        else:
-            envelope_full = envelope_gated
+        max_env_full = np.max(envelope_full)
+        if max_env_full > 1e-6:
+            envelope_full = (envelope_full / max_env_full) * 10.0
 
         # Slice off edge ringing transients
         filtered = filtered_full[pad:-pad] if pad > 0 else filtered_full
@@ -83,10 +80,6 @@ class PCGProcessor:
         }
 
     def detect_s1_s2(self, envelope):
-        """
-        Physiological S1/S2 Detection:
-        Enforces >= 0.48s between S1 beats and isolates S2 strictly in the 180-360ms window.
-        """
         if len(envelope) == 0:
             return np.array([], dtype=int), np.array([], dtype=int)
 
@@ -94,25 +87,25 @@ class PCGProcessor:
         if max_env < 0.5:
             return np.array([], dtype=int), np.array([], dtype=int)
 
-        # S1: Minimum 0.48s distance (prevents diastolic S2->S1 false triggers)
-        min_s1_dist = int(0.48 * self.fs)
+        # S1: Dominant peaks spaced >= 0.45s apart
+        min_s1_dist = int(0.45 * self.fs)
         s1_candidates, _ = find_peaks(
             envelope,
             distance=min_s1_dist,
-            prominence=max(0.4, max_env * 0.20)
+            prominence=max(0.3, max_env * 0.18)
         )
 
         all_peaks, _ = find_peaks(
             envelope,
             distance=int(0.08 * self.fs),
-            prominence=max(0.2, max_env * 0.06)
+            prominence=max(0.1, max_env * 0.05)
         )
 
         s1_peaks = []
         s2_peaks = []
 
-        # Systolic search window for S2: 180ms to 360ms after S1
-        min_sys = int(0.18 * self.fs)
+        # Systolic window: S2 occurs 160ms to 360ms after S1
+        min_sys = int(0.16 * self.fs)
         max_sys = int(0.36 * self.fs)
 
         for s1 in s1_candidates:

@@ -21,6 +21,11 @@ class Patient(models.Model):
 class PatientFollowUp(models.Model):
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='followups')
     heart_rate = models.FloatField(null=True, blank=True)
+    
+    # --- NEW EXPLICIT BLOOD PRESSURE FIELDS ---
+    sbp = models.FloatField(null=True, blank=True)
+    dbp = models.FloatField(null=True, blank=True)
+
     si = models.FloatField(null=True, blank=True)
     cvd_risk = models.CharField(max_length=64, null=True, blank=True)
     cvd_age = models.FloatField(null=True, blank=True)

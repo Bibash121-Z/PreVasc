@@ -1,0 +1,1 @@
+{"in_channels": 1, "base_filters": 24, "ratio": 1.0, "filter_list": [24, 48, 96, 192], "m_blocks_list": [2, 2, 2, 2], "kernel_size": 13, "stride": 1, "groups_width": 12, "verbose": false, "n_classes": 1}

@@ -79,6 +79,8 @@
                                     <th class="highlight-col">SI</th>
                                     <th class="highlight-col">CVD RISK</th>
                                     <th class="highlight-col">CVD AGE</th>
+                                    <th class="highlight-col">SBP</th>
+                                    <th class="highlight-col">DBP</th>
                                     <th class="highlight-col">PWV</th>
                                     <th>CT</th>
                                     <th>RI</th>
@@ -148,11 +150,16 @@
                 <section class="card control-card">
                     <h2 class="card-title">Device Control</h2>
                     <div class="control-actions">
+                        <!-- NEW: Sensor Toggles -->
+                        <div class="sensor-toggles" style="display: flex; gap: 1rem; margin-bottom: 8px; justify-content: center; font-size: 0.9rem; font-weight: 600;">
+                            <label style="cursor: pointer;"><input type="checkbox" id="toggle-ppg" checked> Enable PPG</label>
+                            <label style="cursor: pointer;"><input type="checkbox" id="toggle-pcg" checked> Enable PCG</label>
+                        </div>
+                        
                         <button id="start-btn" class="action-btn btn-start">Start Capture</button>
                         <button id="stop-btn" class="action-btn btn-stop">Stop / Halt</button>
                         <button id="reset-btn" class="action-btn btn-reset">Reset Timer</button>
-                        <!-- Below your reset button inside Device Control -->
-<button id="save-btn" class="action-btn btn-save" style="background-color: #0284c7; color: white; margin-top: 8px;">Save Session</button>
+                        <button id="save-btn" class="action-btn btn-save" style="background-color: #0284c7; color: white; margin-top: 8px;">Save Session</button>
                     </div>
                     <div class="timer-display">
                         <span class="timer-label">Session Duration</span>
@@ -162,16 +169,31 @@
 
                 <!-- Block 3: Diagnostic Results Metric Panel -->
                 <section class="card results-card">
-                    <h2 class="card-title">Diagnostic Metrics</h2>
+                    <h2 class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>Diagnostic Metrics</span>
+                        <span id="clinical-status-badge" class="status-badge" style="background-color: #f59e0b; color: #fff; font-size: 0.75rem;">WAITING FOR SENSOR...</span>
+                    </h2>
                     <div class="metrics-grid">
                         <div class="metric-box">
                             <span class="metric-label">Heart Rate</span>
-                            <div class="metric-value"><span id="hr-val">0</span> <span class="unit">BPM</span></div> 
-                    
+                            <div class="metric-value"><span id="hr-val">--</span> <span class="unit">BPM</span></div> 
                         </div> 
-                         <div class="metric-box">
-                            <span class="metric-label">Estimated PWV</span>
-                            <div class="metric-value"><span id="pwv-val">0</span> <span class="unit">m/s</span></div>
+                        <div class="metric-box">
+                            <span class="metric-label">Blood Pressure</span>
+                            <div class="metric-value"><span id="bp-val">--/--</span> <span class="unit">mmHg</span></div>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-label">Vascular Age</span>
+                            <div class="metric-value"><span id="vasc-age-val">--</span> <span class="unit">Yrs</span></div>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-label">10-Yr CVD Risk</span>
+                            <div class="metric-value"><span id="cvd-risk-val" class="status-badge" style="font-size: 1.1rem;">--</span></div>
+                        </div>
+                        <!-- NEW: Pulse Wave Velocity Box -->
+                        <div class="metric-box wide-box" style="text-align: center; border-top: 1px dashed #e2e8f0; padding-top: 1rem;">
+                            <span class="metric-label">Pulse Wave Velocity (PWV)</span>
+                            <div class="metric-value"><span id="pwv-val">--</span> <span class="unit">m/s</span></div>
                         </div>
                     </div>
                 </section>

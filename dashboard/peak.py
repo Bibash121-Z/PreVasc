@@ -23,7 +23,7 @@ class PPGProcessor:
         self,
         fs=125,
         lowcut=0.5,
-        highcut=8.0,  # Lowered from 25.0 to 8.0 to strongly smooth baseline noise
+        highcut=18.0,  # Lowered from 25.0 to 8.0 to strongly smooth baseline noise
         butter_order=4,
         median_kernel=5, # Increased from 3 to 5 for better impulse noise rejection
         moving_average_window=5 # Increased from 3 to 5 for smoother raw-ish line
@@ -333,65 +333,36 @@ class PPGProcessor:
     # ==================================================
 
     def detect_diastolic(self, signal, systolic_peaks):
-
         signal = np.asarray(signal, dtype=float)
-        grad = np.gradient(signal)  # First derivative
-        
+        grad = np.gradient(signal)
         diastolic = []
         n = len(signal)
 
+        # Physiological bounds: Dicrotic notch is always 140ms - 340ms after systolic peak
+        min_offset = int(0.14 * self.fs)
+        max_offset = int(0.34 * self.fs)
+
         for i in range(len(systolic_peaks)):
-
             p_start = systolic_peaks[i]
+            p_end = systolic_peaks[i + 1] if i + 1 < len(systolic_peaks) else n
 
-            p_end = (
-                systolic_peaks[i + 1]
-                if i + 1 < len(systolic_peaks)
-                else n
-            )
+            search_start = p_start + min_offset
+            search_end = min(p_start + max_offset, p_end - 4)
 
-            m = p_end - p_start
-
-            if m < 15:
-                continue
-
-            # 1. Find the wave foot (minimum) between this systolic peak and the next.
-            # Start search slightly after the systolic peak to avoid its immediate peak curvature.
-            filter_ripple_margin = max(int(0.10 * m), 3)
-            search_start = p_start + filter_ripple_margin
-            
-            foot_rel_idx = np.argmin(signal[search_start : p_end])
-            foot_idx = search_start + foot_rel_idx
-
-            search_end = foot_idx
-            
             if search_start >= search_end or (search_end - search_start) < 3:
                 continue
 
             search_window = signal[search_start:search_end]
             search_grad = grad[search_start:search_end]
-            
-            # Step A: Is there a true upward bump in the raw signal? (Healthy / Class 1)
+
             bump_peaks, _ = find_peaks(search_window)
-            
             if len(bump_peaks) > 0:
-                # Select the FIRST bump on the downslope (Diastolic Peak)
                 diastolic.append(search_start + bump_peaks[0])
             else:
-                # Step B: Look for an inflection point/shoulder (Stiff / Class 2 or 3)
-                # This is a local MAXIMUM in the first derivative (slope getting less negative)
-                local_grad_range = np.max(grad[p_start:p_end]) - np.min(grad[p_start:p_end])
-                
-                # LOWERED prominence requirement significantly to catch subtle shoulders at high HR
-                prominence = max(0.005 * local_grad_range, 1e-6) 
-                
-                grad_peaks, props = find_peaks(search_grad, prominence=prominence)
-                
+                grad_peaks, _ = find_peaks(search_grad, prominence=0.001)
                 if len(grad_peaks) > 0:
-                    # Select the FIRST inflection on the downslope
                     diastolic.append(search_start + grad_peaks[0])
                 else:
-                    # Fallback: Absolute flattest point in this downslope region
                     diastolic.append(search_start + np.argmax(search_grad))
 
         return np.array(diastolic, dtype=int)
@@ -429,7 +400,7 @@ class PPGProcessor:
                 "diastolic_peaks": np.array([], dtype=int)
             }
 
-        baseline_removed = self.remove_baseline(signal)
+        baseline_removed = signal - np.mean(signal)
 
         median = self.median_filter(baseline_removed)
 
